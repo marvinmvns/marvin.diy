@@ -13,7 +13,11 @@ const existentialText = $('#existentialText');
 const IMAGE_DISPLAY_DURATION = 10000; // 10 segundos
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
-const EXISTENTIAL_TEXT_URL = '/existential_texts.json';
+const EXISTENTIAL_TEXT_URL = '/api/existential-texts';
+const EXISTENTIAL_REQUEST_HEADERS = {
+  'Content-Type': 'application/json; charset=utf-8',
+  'X-Requested-With': 'MediaWallPlayer'
+};
 
 let playlist = [];
 let index = 0;
@@ -59,7 +63,13 @@ function fetchExistentialTexts() {
     return existentialTextsPromise;
   }
 
-  existentialTextsPromise = fetch(EXISTENTIAL_TEXT_URL, { cache: 'no-store' })
+  existentialTextsPromise = fetch(EXISTENTIAL_TEXT_URL, {
+    method: 'POST',
+    headers: EXISTENTIAL_REQUEST_HEADERS,
+    body: JSON.stringify({ purpose: 'playlist' }),
+    cache: 'no-store',
+    credentials: 'same-origin'
+  })
     .then((response) => {
       if (!response.ok) {
         throw new Error('Falha ao carregar textos existenciais');
