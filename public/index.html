@@ -27,31 +27,6 @@
       object-fit: cover;
       background: #000;
     }
-    #overlay {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0, 0, 0, 0.65);
-      backdrop-filter: blur(2px);
-      z-index: 3;
-    }
-    #overlay button {
-      font: 600 18px/1.2 system-ui, sans-serif;
-      padding: 14px 24px;
-      color: #fff;
-      background: transparent;
-      border: 2px solid #fff;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.2s ease, color 0.2s ease;
-    }
-    #overlay button:hover,
-    #overlay button:focus {
-      background: #fff;
-      color: #000;
-    }
     #controls {
       position: absolute;
       left: 16px;
@@ -86,10 +61,6 @@
       text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
     }
     @media (max-width: 600px) {
-      #overlay button {
-        width: 200px;
-        font-size: 16px;
-      }
       .ctrl-btn {
         font-size: 13px;
         padding: 9px 12px;
@@ -100,13 +71,11 @@
 <body>
   <div id="wrap">
     <div id="msg"></div>
-    <video id="player" playsinline muted preload="metadata"></video>
+    <video id="player" playsinline muted preload="metadata" autoplay></video>
     <div id="controls">
+      <button id="btnFullscreen" class="ctrl-btn" type="button">Tela cheia</button>
       <button id="btnSound" class="ctrl-btn" type="button">Som: OFF</button>
       <button id="btnExit" class="ctrl-btn" type="button">Sair FS</button>
-    </div>
-    <div id="overlay">
-      <button id="btnStart" type="button">Clique para iniciar</button>
     </div>
   </div>
   <script src="/app.js" defer></script>

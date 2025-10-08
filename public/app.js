@@ -1,9 +1,8 @@
 const $ = (selector) => document.querySelector(selector);
 const player = $('#player');
-const overlay = $('#overlay');
-const btnStart = $('#btnStart');
 const btnSound = $('#btnSound');
 const btnExit = $('#btnExit');
+const btnFullscreen = $('#btnFullscreen');
 const msg = $('#msg');
 
 let playlist = [];
@@ -84,7 +83,6 @@ async function startPlayback() {
     const videos = await fetchVideos();
     if (!videos.length) {
       showMessage('Nenhum vídeo encontrado na pasta /videos');
-      overlay.style.display = 'flex';
       isStarting = false;
       return;
     }
@@ -93,25 +91,27 @@ async function startPlayback() {
     index = 0;
     setVideo(playlist[index]);
 
-    overlay.style.display = 'none';
-
-    await requestFullscreen().catch(() => {});
-
     const playPromise = player.play();
     if (playPromise && typeof playPromise.catch === 'function') {
       playPromise.catch(() => {});
     }
 
+    await requestFullscreen().catch(() => {});
+
     showMessage('');
   } catch (err) {
-    overlay.style.display = 'flex';
     showMessage(err.message || String(err));
   } finally {
     isStarting = false;
   }
 }
 
-btnStart.addEventListener('click', startPlayback);
+btnFullscreen.addEventListener('click', () => {
+  requestFullscreen().catch(() => {});
+  if (!playlist.length && !isStarting) {
+    startPlayback();
+  }
+});
 
 btnSound.addEventListener('click', () => {
   player.muted = !player.muted;
@@ -142,3 +142,4 @@ player.addEventListener('playing', () => {
 });
 
 updateSoundLabel();
+startPlayback();
