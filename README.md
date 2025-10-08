@@ -9,7 +9,6 @@ A pure Node.js media wall that plays all videos and images from the local `./vid
 - 🔊 **Inline controls** – Toggle sound for video items, exit fullscreen, and automatically mute when images are displayed.
 - 🛠️ **Self-contained Node.js server** – Streams files with HTTP range support, strong caching headers, and a health check endpoint.
 - 💾 **Caching-aware experience** – Service Worker caches the application shell while leaving media files to the browser's native cache with long-lived HTTP headers.
-- ❤️ **Floating "curtir" reactions** – A drifting like button invites visitors to react; every click is logged with basic client metadata in `likes.json`.
 - 🧰 **Zero external dependencies** – Uses only Node.js core modules, ideal for constrained environments or offline kiosks.
 
 ## Requirements
@@ -23,7 +22,6 @@ A pure Node.js media wall that plays all videos and images from the local `./vid
 ```
 project/
 ├── server.js          # Pure Node.js HTTP server
-├── likes.json         # Persistent store for floating "curtir" reactions
 ├── README.md          # This guide
 ├── public/
 │   ├── index.html     # Fullscreen player UI
@@ -79,8 +77,6 @@ project/
 | GET    | `/healthz`       | Simple health check returning `200 OK` with `ok` body.         |
 | GET    | `/api/videos`    | Returns JSON array of `{ name, type }` media descriptors.      |
 | GET    | `/videos/<file>` | Streams a media file with Range support (videos only).         |
-| GET    | `/api/likes`     | Returns the total number of recorded "curtir" reactions.       |
-| POST   | `/api/likes`     | Persists a new reaction with IP/user-agent metadata.           |
 
 ### `/api/videos` Response Example
 ```json
@@ -91,34 +87,6 @@ project/
 ```
 - The playlist logic uses this endpoint to shuffle and loop through every available file.
 - The response is always sorted alphabetically for stable ordering before shuffling client-side.
-
-### Floating "curtir" reactions
-
-- A cada carregamento da página, um botão de "curtir" flutua pela tela convidando o visitante a reagir. As posições mudam automaticamente em intervalos randômicos para chamar atenção sem bloquear a visualização da mídia.
-- Ao clicar no botão, o cliente envia uma requisição `POST /api/likes` com metadados básicos (idioma, plataforma, timezone, dimensões de tela e referrer). O servidor complementa o registro com IP e user-agent da conexão antes de persistir no arquivo `likes.json`.
-- O endpoint `GET /api/likes` retorna apenas o contador agregado (`total`), permitindo exibir o número atualizado na interface sem expor dados sensíveis.
-- O arquivo `likes.json` é criado automaticamente caso não exista e mantém um histórico cronológico das curtidas, o que facilita auditoria simples ou sincronização com outros sistemas.
-
-```json
-{
-  "total": 5,
-  "entries": [
-    {
-      "timestamp": "2024-05-19T12:34:56.789Z",
-      "ip": "192.0.2.10",
-      "userAgent": "Mozilla/5.0 (X11; Linux armv7l) ...",
-      "metadata": {
-        "language": "pt-BR",
-        "platform": "Linux armv7l",
-        "timezone": "America/Sao_Paulo",
-        "screen": { "width": 1920, "height": 1080 }
-      }
-    }
-  ]
-}
-```
-
-> Ajuste o conteúdo salvo em `server.js` caso precise anonimizar ou reduzir os dados coletados.
 
 ## Caching Strategy
 
