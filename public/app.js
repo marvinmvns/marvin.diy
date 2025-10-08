@@ -25,10 +25,12 @@ let likeFlashTimer = null;
 let isSendingLike = false;
 let existentialTexts = [];
 let existentialTextsPromise = null;
-let existentialLastIndex = -1;
+let existentialBag = [];
 let existentialTypewriterTimer = null;
 let existentialRenderToken = 0;
 let existentialDisplayToken = 0;
+let existentialIsWriting = false;
+let existentialPendingRequest = false;
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i -= 1) {
@@ -69,10 +71,12 @@ function fetchExistentialTexts() {
       existentialTexts = list
         .map((item) => (typeof item === 'string' ? item.trim() : ''))
         .filter(Boolean);
+      existentialBag = [];
       return existentialTexts;
     })
     .catch(() => {
       existentialTexts = [];
+      existentialBag = [];
       return existentialTexts;
     });
 
@@ -84,19 +88,16 @@ function cancelExistentialTypewriter() {
     clearTimeout(existentialTypewriterTimer);
     existentialTypewriterTimer = null;
   }
+  existentialIsWriting = false;
 }
 
 function pickExistentialText() {
   if (!existentialTexts.length) return null;
-  let nextIndex = Math.floor(Math.random() * existentialTexts.length);
-  if (existentialTexts.length > 1) {
-    let attempts = 0;
-    while (nextIndex === existentialLastIndex && attempts < 5) {
-      nextIndex = Math.floor(Math.random() * existentialTexts.length);
-      attempts += 1;
-    }
+  if (!existentialBag.length) {
+    existentialBag = existentialTexts.map((_, index) => index);
+    shuffle(existentialBag);
   }
-  existentialLastIndex = nextIndex;
+  const nextIndex = existentialBag.pop();
   return existentialTexts[nextIndex];
 }
 
@@ -106,14 +107,28 @@ function renderExistentialTypewriter(text, token) {
   existentialBox.hidden = false;
   existentialBox.classList.add('is-visible');
   const characters = Array.from(text);
+  existentialIsWriting = true;
+
+  const finish = () => {
+    if (token !== existentialRenderToken) return;
+    existentialTypewriterTimer = null;
+    existentialIsWriting = false;
+    if (existentialPendingRequest) {
+      existentialPendingRequest = false;
+      displayExistentialReflection();
+    }
+  };
 
   const step = (position) => {
     if (token !== existentialRenderToken) return;
-    if (position >= characters.length) return;
+    if (position >= characters.length) {
+      finish();
+      return;
+    }
 
     existentialText.textContent += characters[position];
     const char = characters[position];
-    const delay = char === ' ' ? 20 : 45 + Math.random() * 55;
+    const delay = char === ' ' ? 60 : 110 + Math.random() * 70;
     existentialTypewriterTimer = setTimeout(() => {
       step(position + 1);
     }, delay);
@@ -125,11 +140,13 @@ function renderExistentialTypewriter(text, token) {
 function displayExistentialReflection() {
   if (!existentialBox || !existentialText) return;
   const token = ++existentialRenderToken;
+  existentialPendingRequest = false;
   cancelExistentialTypewriter();
   const text = pickExistentialText();
   if (!text) {
     existentialBox.classList.remove('is-visible');
     existentialBox.hidden = true;
+    existentialIsWriting = false;
     return;
   }
   renderExistentialTypewriter(text, token);
@@ -139,6 +156,10 @@ function queueExistentialReflection() {
   const displayToken = ++existentialDisplayToken;
   fetchExistentialTexts().then(() => {
     if (displayToken !== existentialDisplayToken) return;
+    if (existentialIsWriting) {
+      existentialPendingRequest = true;
+      return;
+    }
     displayExistentialReflection();
   });
 }
