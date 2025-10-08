@@ -36,6 +36,56 @@
       gap: 10px;
       z-index: 2;
     }
+    #floatingLike {
+      position: absolute;
+      top: 0;
+      left: 0;
+      --like-x: 0px;
+      --like-y: 0px;
+      transform: translate3d(var(--like-x), var(--like-y), 0);
+      transition: transform 6s ease-in-out, background 0.3s ease, border-color 0.3s ease, opacity 0.3s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      border-radius: 999px;
+      color: #fff;
+      font: 600 15px/1 system-ui, sans-serif;
+      cursor: pointer;
+      z-index: 3;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(6px);
+    }
+    #floatingLike:hover,
+    #floatingLike:focus {
+      background: rgba(255, 255, 255, 0.24);
+      outline: none;
+    }
+    #floatingLike:focus-visible {
+      box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4);
+    }
+    #floatingLike.floating-like--sending {
+      pointer-events: none;
+      opacity: 0.75;
+    }
+    #floatingLike.floating-like--success {
+      background: rgba(76, 175, 80, 0.6);
+      border-color: rgba(200, 230, 201, 0.9);
+    }
+    #floatingLike.floating-like--error {
+      background: rgba(244, 67, 54, 0.65);
+      border-color: rgba(255, 205, 210, 0.9);
+    }
+    .floating-like__icon {
+      font-size: 18px;
+    }
+    .floating-like__count {
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.85);
+    }
     .ctrl-btn {
       font: 500 14px/1 system-ui, sans-serif;
       padding: 10px 14px;
@@ -70,6 +120,14 @@
         font-size: 13px;
         padding: 9px 12px;
       }
+      #floatingLike {
+        font-size: 14px;
+        padding: 9px 12px;
+        gap: 6px;
+      }
+      .floating-like__icon {
+        font-size: 16px;
+      }
     }
   </style>
 </head>
@@ -78,6 +136,11 @@
     <div id="msg"></div>
     <video id="player" playsinline muted preload="metadata" autoplay></video>
     <img id="image" class="fullscreen-media" alt="" hidden />
+    <button id="floatingLike" class="floating-like" type="button">
+      <span class="floating-like__icon" aria-hidden="true">❤️</span>
+      <span class="floating-like__label">Curtir</span>
+      <span id="likeCount" class="floating-like__count" aria-live="polite" aria-atomic="true">0</span>
+    </button>
     <div id="controls">
       <button id="btnFullscreen" class="ctrl-btn" type="button">Tela cheia</button>
       <button id="btnSound" class="ctrl-btn" type="button">Som: OFF</button>

@@ -36,7 +36,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (url.pathname.startsWith('/videos/')) {
+  if (url.pathname.startsWith('/videos/') || url.pathname.startsWith('/api/likes')) {
     return;
   }
 

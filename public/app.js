@@ -5,6 +5,8 @@ const btnSound = $('#btnSound');
 const btnExit = $('#btnExit');
 const btnFullscreen = $('#btnFullscreen');
 const msg = $('#msg');
+const likeButton = $('#floatingLike');
+const likeCount = $('#likeCount');
 
 const IMAGE_DISPLAY_DURATION = 10000; // 10 segundos
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
@@ -15,6 +17,9 @@ let index = 0;
 let isStarting = false;
 let imageTimer = null;
 let currentToken = 0;
+let likeMoveTimer = null;
+let likeFlashTimer = null;
+let isSendingLike = false;
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i -= 1) {
@@ -30,6 +35,156 @@ function updateSoundLabel() {
 
 function showMessage(text) {
   msg.textContent = text || '';
+}
+
+function setLikeCount(value) {
+  if (!likeCount) return;
+  const display = Number.isFinite(value) ? value : 0;
+  likeCount.textContent = String(display);
+}
+
+function clearLikeMovementTimer() {
+  if (likeMoveTimer) {
+    clearTimeout(likeMoveTimer);
+    likeMoveTimer = null;
+  }
+}
+
+function markLikeFeedback(state) {
+  if (!likeButton) return;
+  likeButton.classList.remove('floating-like--success', 'floating-like--error');
+  if (likeFlashTimer) {
+    clearTimeout(likeFlashTimer);
+    likeFlashTimer = null;
+  }
+  if (!state) return;
+
+  const className = state === 'success' ? 'floating-like--success' : 'floating-like--error';
+  likeButton.classList.add(className);
+  likeFlashTimer = setTimeout(() => {
+    likeButton.classList.remove(className);
+    likeFlashTimer = null;
+  }, state === 'success' ? 700 : 900);
+}
+
+function applyLikePosition(x, y, immediate) {
+  if (!likeButton) return;
+  if (immediate) {
+    likeButton.style.transition = 'none';
+  }
+  likeButton.style.setProperty('--like-x', `${Math.round(x)}px`);
+  likeButton.style.setProperty('--like-y', `${Math.round(y)}px`);
+  if (immediate) {
+    // força reflow para reabilitar a transição suavemente
+    void likeButton.offsetHeight;
+    likeButton.style.transition = '';
+  }
+}
+
+function moveLike(immediate = false) {
+  if (!likeButton) return;
+  const rect = likeButton.getBoundingClientRect();
+  const margin = 40;
+  const maxX = Math.max(window.innerWidth - rect.width - margin, 0);
+  const maxY = Math.max(window.innerHeight - rect.height - margin, 0);
+  const x = Math.random() * maxX + margin / 2;
+  const y = Math.random() * maxY + margin / 2;
+  applyLikePosition(x, y, immediate);
+}
+
+function scheduleLikeMovement(delay = 4500) {
+  if (!likeButton) return;
+  clearLikeMovementTimer();
+  likeMoveTimer = setTimeout(() => {
+    moveLike();
+    scheduleLikeMovement(4000 + Math.random() * 4000);
+  }, delay);
+}
+
+async function fetchLikeTotal() {
+  if (!likeButton) return;
+  try {
+    const response = await fetch('/api/likes', { cache: 'no-store' });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (typeof data.total === 'number') {
+      setLikeCount(data.total);
+    }
+  } catch (err) {
+    // ignora erros silenciosamente
+  }
+}
+
+async function registerLike() {
+  if (!likeButton || isSendingLike) return;
+  isSendingLike = true;
+  likeButton.classList.add('floating-like--sending');
+  markLikeFeedback();
+
+  const timezone = (() => {
+    try {
+      if (typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
+        const options = Intl.DateTimeFormat().resolvedOptions();
+        if (options && typeof options.timeZone === 'string') {
+          return options.timeZone;
+        }
+      }
+    } catch (err) {
+      // ignora
+    }
+    return null;
+  })();
+
+  const payload = {
+    language: navigator.language || null,
+    platform: navigator.platform || null,
+    timezone,
+    screen: {
+      width: (window.screen && Number.isFinite(window.screen.width) ? window.screen.width : window.innerWidth) || null,
+      height: (window.screen && Number.isFinite(window.screen.height) ? window.screen.height : window.innerHeight) || null
+    },
+    referrer: document.referrer || null
+  };
+
+  try {
+    const response = await fetch('/api/likes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error('Falha na requisição');
+    }
+
+    const data = await response.json();
+    if (typeof data.total === 'number') {
+      setLikeCount(data.total);
+    }
+    markLikeFeedback('success');
+    scheduleLikeMovement(1500);
+  } catch (err) {
+    markLikeFeedback('error');
+    scheduleLikeMovement(2000);
+  } finally {
+    likeButton.classList.remove('floating-like--sending');
+    isSendingLike = false;
+  }
+}
+
+function startLikeFeature() {
+  if (!likeButton) return;
+  setLikeCount(0);
+  moveLike(true);
+  scheduleLikeMovement(1200);
+  fetchLikeTotal();
+  likeButton.addEventListener('click', registerLike);
+  window.addEventListener('resize', () => {
+    moveLike(true);
+    scheduleLikeMovement(2000);
+  });
 }
 
 function detectTypeFromName(name) {
@@ -268,3 +423,4 @@ player.addEventListener('playing', () => {
 
 updateSoundLabel();
 startPlayback();
+startLikeFeature();
