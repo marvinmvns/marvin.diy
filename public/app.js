@@ -155,24 +155,74 @@ function getRandomDelay(min, max) {
 }
 
 function createTypewriterProfile() {
-  const base = 240 + Math.random() * 260; // 240-500ms base delay
-  const variability = 120 + Math.random() * 220; // add 120-340ms of variation
-  const spaceFactor = 0.55 + Math.random() * 0.35; // spaces are naturally quicker
+  const base = 220 + Math.random() * 260; // 220-480ms base delay
+  const variability = 160 + Math.random() * 260; // add 160-420ms of variation
+  const spaceFactor = 0.5 + Math.random() * 0.35; // spaces are naturally quicker
 
   const defaultMin = base;
   const defaultMax = base + variability;
   const spaceMin = defaultMin * spaceFactor;
   const spaceMax = defaultMax * spaceFactor;
 
+  const cadenceStates = [
+    { range: [0.35, 0.6], weight: 0.28 }, // fast burst
+    { range: [0.75, 1.15], weight: 0.44 }, // steady typing
+    { range: [1.2, 1.75], weight: 0.28 } // thoughtful slowdown
+  ];
+
+  let currentState = cadenceStates[1];
+  let stateRemaining = 0;
+
+  const chooseState = () => {
+    const roll = Math.random();
+    let cumulative = 0;
+    for (let i = 0; i < cadenceStates.length; i += 1) {
+      cumulative += cadenceStates[i].weight;
+      if (roll <= cumulative) {
+        return cadenceStates[i];
+      }
+    }
+    return cadenceStates[cadenceStates.length - 1];
+  };
+
+  const applyCadence = (delay) => {
+    if (stateRemaining <= 0) {
+      currentState = chooseState();
+      stateRemaining = 2 + Math.floor(Math.random() * 5); // sustain state for a few characters
+    }
+    stateRemaining -= 1;
+    const [min, max] = currentState.range;
+    const multiplier = min + Math.random() * (max - min);
+    return delay * multiplier;
+  };
+
+  const extraPause = (char) => {
+    if (char === '\n') {
+      return 340 + Math.random() * 420;
+    }
+    if (/[\.!?,;:]/.test(char)) {
+      return 220 + Math.random() * 420;
+    }
+    if (Math.random() < 0.065) {
+      return 140 + Math.random() * 280; // occasional reflective pause
+    }
+    return 0;
+  };
+
   return {
     space: { min: spaceMin, max: spaceMax },
-    default: { min: defaultMin, max: defaultMax }
+    default: { min: defaultMin, max: defaultMax },
+    applyCadence,
+    extraPause
   };
 }
 
 function getTypewriterDelay(char, profile) {
   const { min, max } = char === ' ' ? profile.space : profile.default;
-  return getRandomDelay(min, max);
+  const baseDelay = getRandomDelay(min, max);
+  const cadenceDelay = profile.applyCadence(baseDelay);
+  const total = cadenceDelay + profile.extraPause(char);
+  return Math.max(28, total);
 }
 
 function renderExistentialTypewriter(text, token) {
