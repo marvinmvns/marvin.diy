@@ -7,10 +7,13 @@ const btnFullscreen = $('#btnFullscreen');
 const msg = $('#msg');
 const likeButton = $('#floatingLike');
 const likeCount = $('#likeCount');
+const existentialBox = $('#existentialBox');
+const existentialText = $('#existentialText');
 
 const IMAGE_DISPLAY_DURATION = 10000; // 10 segundos
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
+const EXISTENTIAL_TEXT_URL = '/existential_texts.json';
 
 let playlist = [];
 let index = 0;
@@ -20,6 +23,12 @@ let currentToken = 0;
 let likeMoveTimer = null;
 let likeFlashTimer = null;
 let isSendingLike = false;
+let existentialTexts = [];
+let existentialTextsPromise = null;
+let existentialLastIndex = -1;
+let existentialTypewriterTimer = null;
+let existentialRenderToken = 0;
+let existentialDisplayToken = 0;
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i -= 1) {
@@ -41,6 +50,97 @@ function setLikeCount(value) {
   if (!likeCount) return;
   const display = Number.isFinite(value) ? value : 0;
   likeCount.textContent = String(display);
+}
+
+function fetchExistentialTexts() {
+  if (existentialTextsPromise) {
+    return existentialTextsPromise;
+  }
+
+  existentialTextsPromise = fetch(EXISTENTIAL_TEXT_URL, { cache: 'no-store' })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error('Falha ao carregar textos existenciais');
+      }
+      return response.json();
+    })
+    .then((data) => {
+      const list = data && Array.isArray(data.texts) ? data.texts : [];
+      existentialTexts = list
+        .map((item) => (typeof item === 'string' ? item.trim() : ''))
+        .filter(Boolean);
+      return existentialTexts;
+    })
+    .catch(() => {
+      existentialTexts = [];
+      return existentialTexts;
+    });
+
+  return existentialTextsPromise;
+}
+
+function cancelExistentialTypewriter() {
+  if (existentialTypewriterTimer) {
+    clearTimeout(existentialTypewriterTimer);
+    existentialTypewriterTimer = null;
+  }
+}
+
+function pickExistentialText() {
+  if (!existentialTexts.length) return null;
+  let nextIndex = Math.floor(Math.random() * existentialTexts.length);
+  if (existentialTexts.length > 1) {
+    let attempts = 0;
+    while (nextIndex === existentialLastIndex && attempts < 5) {
+      nextIndex = Math.floor(Math.random() * existentialTexts.length);
+      attempts += 1;
+    }
+  }
+  existentialLastIndex = nextIndex;
+  return existentialTexts[nextIndex];
+}
+
+function renderExistentialTypewriter(text, token) {
+  if (!existentialBox || !existentialText) return;
+  existentialText.textContent = '';
+  existentialBox.hidden = false;
+  existentialBox.classList.add('is-visible');
+  const characters = Array.from(text);
+
+  const step = (position) => {
+    if (token !== existentialRenderToken) return;
+    if (position >= characters.length) return;
+
+    existentialText.textContent += characters[position];
+    const char = characters[position];
+    const delay = char === ' ' ? 20 : 45 + Math.random() * 55;
+    existentialTypewriterTimer = setTimeout(() => {
+      step(position + 1);
+    }, delay);
+  };
+
+  step(0);
+}
+
+function displayExistentialReflection() {
+  if (!existentialBox || !existentialText) return;
+  const token = ++existentialRenderToken;
+  cancelExistentialTypewriter();
+  const text = pickExistentialText();
+  if (!text) {
+    existentialBox.classList.remove('is-visible');
+    existentialBox.hidden = true;
+    return;
+  }
+  renderExistentialTypewriter(text, token);
+}
+
+function queueExistentialReflection() {
+  const displayToken = ++existentialDisplayToken;
+  fetchExistentialTexts().then(() => {
+    if (displayToken !== existentialDisplayToken) return;
+    displayExistentialReflection();
+  });
 }
 
 function clearLikeMovementTimer() {
@@ -258,6 +358,7 @@ function playMedia(item) {
   showMessage('');
 
   const source = `/videos/${encodeURIComponent(item.name)}`;
+  queueExistentialReflection();
 
   if (item.type === 'image') {
     btnSound.disabled = true;
@@ -421,6 +522,7 @@ player.addEventListener('playing', () => {
   showMessage('');
 });
 
+fetchExistentialTexts().catch(() => {});
 updateSoundLabel();
 startPlayback();
 startLikeFeature();

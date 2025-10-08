@@ -36,6 +36,36 @@
       gap: 10px;
       z-index: 2;
     }
+    #existentialBox {
+      position: absolute;
+      left: 50%;
+      bottom: 8%;
+      transform: translateX(-50%);
+      width: min(90vw, 720px);
+      padding: 18px 22px;
+      border-radius: 18px;
+      background: rgba(5, 5, 5, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+      color: #f0f0f0;
+      font-size: 16px;
+      line-height: 1.6;
+      letter-spacing: 0.01em;
+      z-index: 3;
+      backdrop-filter: blur(12px);
+      overflow: hidden;
+      transition: opacity 0.35s ease;
+      opacity: 0;
+      pointer-events: none;
+    }
+    #existentialBox.is-visible {
+      opacity: 1;
+    }
+    #existentialText {
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 3.6em;
+    }
     #floatingLike {
       position: absolute;
       top: 0;
@@ -120,6 +150,11 @@
         font-size: 13px;
         padding: 9px 12px;
       }
+      #existentialBox {
+        bottom: 12%;
+        padding: 14px 18px;
+        font-size: 14px;
+      }
       #floatingLike {
         font-size: 14px;
         padding: 9px 12px;
@@ -136,6 +171,9 @@
     <div id="msg"></div>
     <video id="player" playsinline muted preload="metadata" autoplay></video>
     <img id="image" class="fullscreen-media" alt="" hidden />
+    <div id="existentialBox" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <div id="existentialText"></div>
+    </div>
     <button id="floatingLike" class="floating-like" type="button">
       <span class="floating-like__icon" aria-hidden="true">❤️</span>
       <span class="floating-like__label">Curtir</span>
