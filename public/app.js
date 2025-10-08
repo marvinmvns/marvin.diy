@@ -38,6 +38,7 @@ let existentialDisplayToken = 0;
 let existentialIsWriting = false;
 let existentialPendingRequest = false;
 let existentialPendingAdvance = false;
+let existentialCycleTimer = null;
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i -= 1) {
@@ -119,6 +120,22 @@ function maybeTriggerPendingAdvance() {
   advancePlaylist();
 }
 
+function clearExistentialCycleTimer() {
+  if (existentialCycleTimer) {
+    clearTimeout(existentialCycleTimer);
+    existentialCycleTimer = null;
+  }
+}
+
+function scheduleExistentialReflection(min = EXISTENTIAL_INTERVAL.min, max = EXISTENTIAL_INTERVAL.max) {
+  const upper = Math.max(max, min + 1);
+  clearExistentialCycleTimer();
+  existentialCycleTimer = setTimeout(() => {
+    existentialCycleTimer = null;
+    queueExistentialReflection();
+  }, getRandomDelay(min, upper));
+}
+
 function pickExistentialText() {
   if (!existentialTexts.length) return null;
   if (!existentialBag.length) {
@@ -128,14 +145,34 @@ function pickExistentialText() {
   return existentialTexts[nextIndex];
 }
 
-const TYPEWRITER_DELAY = {
-  space: { min: 220, max: 360 },
-  default: { min: 340, max: 520 }
+const EXISTENTIAL_INTERVAL = {
+  min: 9000,
+  max: 18000
 };
 
-function getTypewriterDelay(char) {
-  const { min, max } = char === ' ' ? TYPEWRITER_DELAY.space : TYPEWRITER_DELAY.default;
+function getRandomDelay(min, max) {
   return min + Math.random() * (max - min);
+}
+
+function createTypewriterProfile() {
+  const base = 240 + Math.random() * 260; // 240-500ms base delay
+  const variability = 120 + Math.random() * 220; // add 120-340ms of variation
+  const spaceFactor = 0.55 + Math.random() * 0.35; // spaces are naturally quicker
+
+  const defaultMin = base;
+  const defaultMax = base + variability;
+  const spaceMin = defaultMin * spaceFactor;
+  const spaceMax = defaultMax * spaceFactor;
+
+  return {
+    space: { min: spaceMin, max: spaceMax },
+    default: { min: defaultMin, max: defaultMax }
+  };
+}
+
+function getTypewriterDelay(char, profile) {
+  const { min, max } = char === ' ' ? profile.space : profile.default;
+  return getRandomDelay(min, max);
 }
 
 function renderExistentialTypewriter(text, token) {
@@ -145,6 +182,8 @@ function renderExistentialTypewriter(text, token) {
   existentialBox.classList.add('is-visible');
   const characters = Array.from(text);
   existentialIsWriting = true;
+  clearExistentialCycleTimer();
+  const typewriterProfile = createTypewriterProfile();
 
   const finish = () => {
     if (token !== existentialRenderToken) return;
@@ -156,6 +195,7 @@ function renderExistentialTypewriter(text, token) {
     }
     if (!existentialIsWriting) {
       maybeTriggerPendingAdvance();
+      scheduleExistentialReflection();
     }
   };
 
@@ -168,7 +208,7 @@ function renderExistentialTypewriter(text, token) {
 
     existentialText.textContent += characters[position];
     const char = characters[position];
-    const delay = getTypewriterDelay(char);
+    const delay = getTypewriterDelay(char, typewriterProfile);
     existentialTypewriterTimer = setTimeout(() => {
       step(position + 1);
     }, delay);
@@ -188,12 +228,14 @@ function displayExistentialReflection() {
     existentialBox.hidden = true;
     existentialIsWriting = false;
     maybeTriggerPendingAdvance();
+    scheduleExistentialReflection();
     return;
   }
   renderExistentialTypewriter(text, token);
 }
 
 function queueExistentialReflection() {
+  clearExistentialCycleTimer();
   const displayToken = ++existentialDisplayToken;
   fetchExistentialTexts().then(() => {
     if (displayToken !== existentialDisplayToken) return;
@@ -592,6 +634,7 @@ player.addEventListener('playing', () => {
 });
 
 fetchExistentialTexts().catch(() => {});
+scheduleExistentialReflection(3000, 7000);
 updateSoundLabel();
 startPlayback();
 startLikeFeature();
