@@ -14,6 +14,8 @@ const IMAGE_DISPLAY_DURATION = 10000; // 10 segundos
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 const EXISTENTIAL_TEXT_URL = '/api/existential-texts';
+const EXISTENTIAL_MAX_TEXTS = 300;
+const EXISTENTIAL_MAX_LENGTH = 300;
 const EXISTENTIAL_REQUEST_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
   'X-Requested-With': 'MediaWallPlayer'
@@ -35,6 +37,7 @@ let existentialRenderToken = 0;
 let existentialDisplayToken = 0;
 let existentialIsWriting = false;
 let existentialPendingRequest = false;
+let existentialPendingAdvance = false;
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i -= 1) {
@@ -78,9 +81,19 @@ function fetchExistentialTexts() {
     })
     .then((data) => {
       const list = data && Array.isArray(data.texts) ? data.texts : [];
-      existentialTexts = list
-        .map((item) => (typeof item === 'string' ? item.trim() : ''))
-        .filter(Boolean);
+      const seen = new Set();
+      const normalized = [];
+
+      for (let i = 0; i < list.length && normalized.length < EXISTENTIAL_MAX_TEXTS; i += 1) {
+        const raw = typeof list[i] === 'string' ? list[i].trim() : '';
+        if (!raw) continue;
+        const sliced = raw.length > EXISTENTIAL_MAX_LENGTH ? raw.slice(0, EXISTENTIAL_MAX_LENGTH) : raw;
+        if (seen.has(sliced)) continue;
+        seen.add(sliced);
+        normalized.push(sliced);
+      }
+
+      existentialTexts = normalized;
       existentialBag = [];
       return existentialTexts;
     })
@@ -99,6 +112,11 @@ function cancelExistentialTypewriter() {
     existentialTypewriterTimer = null;
   }
   existentialIsWriting = false;
+}
+
+function maybeTriggerPendingAdvance() {
+  if (!existentialPendingAdvance) return;
+  advancePlaylist();
 }
 
 function pickExistentialText() {
@@ -127,6 +145,9 @@ function renderExistentialTypewriter(text, token) {
       existentialPendingRequest = false;
       displayExistentialReflection();
     }
+    if (!existentialIsWriting) {
+      maybeTriggerPendingAdvance();
+    }
   };
 
   const step = (position) => {
@@ -138,7 +159,7 @@ function renderExistentialTypewriter(text, token) {
 
     existentialText.textContent += characters[position];
     const char = characters[position];
-    const delay = char === ' ' ? 60 : 110 + Math.random() * 70;
+    const delay = char === ' ' ? 120 + Math.random() * 40 : 190 + Math.random() * 110;
     existentialTypewriterTimer = setTimeout(() => {
       step(position + 1);
     }, delay);
@@ -157,6 +178,7 @@ function displayExistentialReflection() {
     existentialBox.classList.remove('is-visible');
     existentialBox.hidden = true;
     existentialIsWriting = false;
+    maybeTriggerPendingAdvance();
     return;
   }
   renderExistentialTypewriter(text, token);
@@ -465,6 +487,13 @@ function handleMediaFailure(message) {
 }
 
 function advancePlaylist() {
+  if (existentialIsWriting) {
+    existentialPendingAdvance = true;
+    return;
+  }
+
+  existentialPendingAdvance = false;
+
   if (!playlist.length) {
     showMessage('Nenhuma mídia disponível para reprodução.');
     btnSound.disabled = true;
