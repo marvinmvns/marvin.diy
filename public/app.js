@@ -122,11 +122,20 @@ function maybeTriggerPendingAdvance() {
 function pickExistentialText() {
   if (!existentialTexts.length) return null;
   if (!existentialBag.length) {
-    existentialBag = existentialTexts.map((_, index) => index);
-    shuffle(existentialBag);
+    existentialBag = shuffle(existentialTexts.map((_, index) => index));
   }
-  const nextIndex = existentialBag.pop();
+  const nextIndex = existentialBag.splice(Math.floor(Math.random() * existentialBag.length), 1)[0];
   return existentialTexts[nextIndex];
+}
+
+const TYPEWRITER_DELAY = {
+  space: { min: 220, max: 360 },
+  default: { min: 340, max: 520 }
+};
+
+function getTypewriterDelay(char) {
+  const { min, max } = char === ' ' ? TYPEWRITER_DELAY.space : TYPEWRITER_DELAY.default;
+  return min + Math.random() * (max - min);
 }
 
 function renderExistentialTypewriter(text, token) {
@@ -159,7 +168,7 @@ function renderExistentialTypewriter(text, token) {
 
     existentialText.textContent += characters[position];
     const char = characters[position];
-    const delay = char === ' ' ? 120 + Math.random() * 40 : 190 + Math.random() * 110;
+    const delay = getTypewriterDelay(char);
     existentialTypewriterTimer = setTimeout(() => {
       step(position + 1);
     }, delay);
