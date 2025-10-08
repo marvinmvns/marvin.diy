@@ -17,8 +17,16 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
-  '.ogv': 'video/ogg'
+  '.ogv': 'video/ogg',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp'
 };
+
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 
 function send(res, status, headers = {}, body) {
   res.writeHead(status, headers);
@@ -29,13 +37,22 @@ function send(res, status, headers = {}, body) {
   }
 }
 
-function listVideos() {
+function listMedia() {
   if (!fs.existsSync(VIDEOS_DIR)) return [];
-  const validExt = new Set(['.mp4', '.webm', '.ogv']);
   return fs
     .readdirSync(VIDEOS_DIR)
-    .filter((file) => validExt.has(path.extname(file).toLowerCase()))
-    .sort();
+    .filter((file) => {
+      const ext = path.extname(file).toLowerCase();
+      return VIDEO_EXTENSIONS.has(ext) || IMAGE_EXTENSIONS.has(ext);
+    })
+    .map((file) => {
+      const ext = path.extname(file).toLowerCase();
+      return {
+        name: file,
+        type: VIDEO_EXTENSIONS.has(ext) ? 'video' : 'image'
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function buildEtag(stat) {
@@ -75,36 +92,57 @@ function serveStatic(filePath, req, res) {
   return send(res, 200, headers, fs.createReadStream(filePath));
 }
 
-function serveVideo(filePath, req, res) {
+function serveMedia(filePath, req, res) {
   let stat;
   try {
     stat = fs.statSync(filePath);
     if (stat.isDirectory()) throw new Error('Is directory');
   } catch (err) {
-    return send(res, 404, { 'Content-Type': 'text/plain; charset=utf-8' }, 'Video not found');
+    return send(res, 404, { 'Content-Type': 'text/plain; charset=utf-8' }, 'Arquivo não encontrado');
   }
 
   const ext = path.extname(filePath).toLowerCase();
+  const isVideo = VIDEO_EXTENSIONS.has(ext);
+  const isImage = IMAGE_EXTENSIONS.has(ext);
+
+  if (!isVideo && !isImage) {
+    return send(res, 415, { 'Content-Type': 'text/plain; charset=utf-8' }, 'Tipo de arquivo não suportado');
+  }
+
   const total = stat.size;
   const etag = buildEtag(stat);
   const lastModified = stat.mtime.toUTCString();
 
   const baseHeaders = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
-    'Accept-Ranges': 'bytes',
     ETag: etag,
     'Last-Modified': lastModified,
     'Cache-Control': 'public, max-age=31536000, immutable'
   };
 
+  const conditionalHeaders = isVideo ? { ...baseHeaders, 'Accept-Ranges': 'bytes' } : baseHeaders;
+
   if (req.headers['if-none-match'] === etag) {
-    return send(res, 304, baseHeaders);
+    return send(res, 304, conditionalHeaders);
+  }
+
+  if (!isVideo) {
+    return send(res, 200, { ...baseHeaders, 'Content-Length': total }, fs.createReadStream(filePath));
   }
 
   const range = req.headers.range;
 
   if (!range) {
-    return send(res, 200, { ...baseHeaders, 'Content-Length': total }, fs.createReadStream(filePath));
+    return send(
+      res,
+      200,
+      {
+        ...baseHeaders,
+        'Content-Length': total,
+        'Accept-Ranges': 'bytes'
+      },
+      fs.createReadStream(filePath)
+    );
   }
 
   const matches = range.match(/bytes=(\d*)-(\d*)/);
@@ -156,6 +194,7 @@ function serveVideo(filePath, req, res) {
 
   const headers = {
     ...baseHeaders,
+    'Accept-Ranges': 'bytes',
     'Content-Range': `bytes ${start}-${end}/${total}`,
     'Content-Length': chunkSize
   };
@@ -182,7 +221,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/api/videos' && req.method === 'GET') {
-    const files = listVideos();
+    const files = listMedia();
     return send(
       res,
       200,
@@ -200,7 +239,7 @@ const server = http.createServer((req, res) => {
     if (!filePath) {
       return send(res, 403, { 'Content-Type': 'text/plain; charset=utf-8' }, 'Forbidden');
     }
-    return serveVideo(filePath, req, res);
+    return serveMedia(filePath, req, res);
   }
 
   const filePath = pathname === '/' ? path.join(PUBLIC_DIR, 'index.html') : safeJoin(PUBLIC_DIR, pathname);
@@ -215,6 +254,6 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`Server running at http://${HOST}:${PORT}`);
   if (!fs.existsSync(VIDEOS_DIR)) {
-    console.warn('Atenção: crie a pasta ./videos e coloque seus arquivos .mp4/.webm/.ogv');
+    console.warn('Atenção: crie a pasta ./videos e coloque seus arquivos de vídeo (.mp4/.webm/.ogv) ou imagem (.jpg/.jpeg/.png/.gif/.webp)');
   }
 });

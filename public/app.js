@@ -1,13 +1,20 @@
 const $ = (selector) => document.querySelector(selector);
 const player = $('#player');
+const image = $('#image');
 const btnSound = $('#btnSound');
 const btnExit = $('#btnExit');
 const btnFullscreen = $('#btnFullscreen');
 const msg = $('#msg');
 
+const IMAGE_DISPLAY_DURATION = 10000; // 10 segundos
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
+
 let playlist = [];
 let index = 0;
 let isStarting = false;
+let imageTimer = null;
+let currentToken = 0;
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i -= 1) {
@@ -25,12 +32,40 @@ function showMessage(text) {
   msg.textContent = text || '';
 }
 
-async function fetchVideos() {
+function detectTypeFromName(name) {
+  const extMatch = name.match(/\.([^.]+)$/);
+  if (!extMatch) return null;
+  const ext = `.${extMatch[1].toLowerCase()}`;
+  if (VIDEO_EXTENSIONS.has(ext)) return 'video';
+  if (IMAGE_EXTENSIONS.has(ext)) return 'image';
+  return null;
+}
+
+function normalizeMedia(list) {
+  if (!Array.isArray(list)) return [];
+  if (list.every((item) => typeof item === 'string')) {
+    return list
+      .map((name) => ({ name, type: detectTypeFromName(name) }))
+      .filter((item) => item.type);
+  }
+  return list
+    .map((item) => {
+      if (!item || typeof item.name !== 'string') return null;
+      const typeCandidate = item.type || detectTypeFromName(item.name);
+      const type = typeof typeCandidate === 'string' ? typeCandidate.toLowerCase() : null;
+      if (type !== 'video' && type !== 'image') return null;
+      return { name: item.name, type };
+    })
+    .filter(Boolean);
+}
+
+async function fetchMedia() {
   const response = await fetch('/api/videos', { cache: 'no-store' });
   if (!response.ok) {
-    throw new Error('Não foi possível obter a lista de vídeos');
+    throw new Error('Não foi possível obter a lista de mídias');
   }
-  return response.json();
+  const payload = await response.json();
+  return normalizeMedia(payload);
 }
 
 function requestFullscreen() {
@@ -51,54 +86,144 @@ function exitFullscreen() {
   return Promise.resolve();
 }
 
-function setVideo(filename) {
-  player.src = `/videos/${encodeURIComponent(filename)}`;
-  player.load();
+function clearImageTimer() {
+  if (imageTimer) {
+    clearTimeout(imageTimer);
+    imageTimer = null;
+  }
 }
 
-function advancePlaylist() {
+function playMedia(item) {
+  if (!item) return;
+
+  currentToken += 1;
+  const token = currentToken;
+
+  clearImageTimer();
+  showMessage('');
+
+  const source = `/videos/${encodeURIComponent(item.name)}`;
+
+  if (item.type === 'image') {
+    btnSound.disabled = true;
+    updateSoundLabel();
+    player.pause();
+    player.removeAttribute('src');
+    player.load();
+    player.hidden = true;
+
+    image.hidden = false;
+    image.onload = () => {
+      if (token !== currentToken) return;
+      showMessage('');
+      clearImageTimer();
+      imageTimer = setTimeout(() => {
+        if (token === currentToken) {
+          advancePlaylist();
+        }
+      }, IMAGE_DISPLAY_DURATION);
+    };
+
+    image.onerror = () => {
+      if (token !== currentToken) return;
+      handleMediaFailure('Erro ao exibir imagem, avançando...');
+    };
+    image.src = source;
+    return;
+  }
+
+  btnSound.disabled = false;
+  updateSoundLabel();
+
+  image.hidden = true;
+  image.removeAttribute('src');
+  image.onload = null;
+  image.onerror = null;
+
+  player.hidden = false;
+  player.src = source;
+  player.load();
+  const playPromise = player.play();
+  if (playPromise && typeof playPromise.catch === 'function') {
+    playPromise.catch(() => {});
+  }
+}
+
+function handleMediaFailure(message) {
+  clearImageTimer();
+  showMessage(message);
+
   if (!playlist.length) {
     return;
   }
 
-  index = (index + 1) % playlist.length;
-  if (index === 0) {
-    playlist = shuffle(playlist.slice());
+  if (playlist.length === 1) {
+    playlist = [];
+    index = 0;
+    currentToken += 1;
+    player.pause();
+    player.removeAttribute('src');
+    player.load();
+    image.hidden = true;
+    image.removeAttribute('src');
+    btnSound.disabled = true;
+    updateSoundLabel();
+    showMessage(`${message} Nenhuma outra mídia disponível.`);
+    return;
   }
 
-  const nextFile = playlist[index];
-  setVideo(nextFile);
-  player.play().catch(() => {
-    // Falhou novamente, pula para o próximo
-    advancePlaylist();
-  });
+  playlist.splice(index, 1);
+  index = Math.max(index - 1, -1);
+  advancePlaylist();
+}
+
+function advancePlaylist() {
+  if (!playlist.length) {
+    showMessage('Nenhuma mídia disponível para reprodução.');
+    btnSound.disabled = true;
+    updateSoundLabel();
+    return;
+  }
+
+  if (playlist.length > 1) {
+    index = (index + 1) % playlist.length;
+    if (index === 0) {
+      playlist = shuffle(playlist.slice());
+    }
+  } else {
+    index = 0;
+  }
+
+  const nextItem = playlist[index];
+  if (!nextItem) {
+    showMessage('Nenhuma mídia disponível para reprodução.');
+    btnSound.disabled = true;
+    updateSoundLabel();
+    return;
+  }
+
+  playMedia(nextItem);
 }
 
 async function startPlayback() {
   if (isStarting) return;
   isStarting = true;
-  showMessage('Carregando vídeos...');
+  showMessage('Carregando mídias...');
 
   try {
-    const videos = await fetchVideos();
-    if (!videos.length) {
-      showMessage('Nenhum vídeo encontrado na pasta /videos');
-      isStarting = false;
+    const media = await fetchMedia();
+    if (!media.length) {
+      showMessage('Nenhum vídeo ou imagem encontrado na pasta /videos');
+      btnSound.disabled = true;
+      updateSoundLabel();
       return;
     }
 
-    playlist = shuffle(videos.slice());
+    playlist = shuffle(media.slice());
     index = 0;
-    setVideo(playlist[index]);
-
-    const playPromise = player.play();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch(() => {});
-    }
+    playMedia(playlist[index]);
 
     await requestFullscreen().catch(() => {});
-
-    showMessage('');
   } catch (err) {
     showMessage(err.message || String(err));
   } finally {
@@ -114,6 +239,7 @@ btnFullscreen.addEventListener('click', () => {
 });
 
 btnSound.addEventListener('click', () => {
+  if (btnSound.disabled) return;
   player.muted = !player.muted;
   updateSoundLabel();
   if (!player.paused) {
@@ -133,8 +259,7 @@ player.addEventListener('ended', () => {
 });
 
 player.addEventListener('error', () => {
-  showMessage('Erro ao reproduzir vídeo, avançando...');
-  advancePlaylist();
+  handleMediaFailure('Erro ao reproduzir vídeo, avançando...');
 });
 
 player.addEventListener('playing', () => {
