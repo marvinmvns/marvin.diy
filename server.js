@@ -7,9 +7,13 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const VIDEOS_DIR = path.join(__dirname, 'videos');
+const DATA_DIR = path.join(__dirname, 'data');
 const LIKES_FILE = path.join(__dirname, 'likes.json');
+const EXISTENTIAL_TEXTS_FILE = path.join(DATA_DIR, 'existential_texts.json');
 
 const LIKE_PAYLOAD_LIMIT = 8 * 1024; // 8 KB para metadados enviados pelo cliente
+const EXISTENTIAL_REQUEST_HEADER = 'x-requested-with';
+const EXISTENTIAL_REQUEST_EXPECTED_VALUE = 'MediaWallPlayer';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -55,6 +59,34 @@ function ensureLikesStore() {
       console.error('Não foi possível preparar o arquivo de curtidas:', writeErr);
     }
   }
+}
+
+let existentialTextsCache = [];
+let existentialTextsCacheStamp = 0;
+
+function loadExistentialTexts() {
+  try {
+    const stat = fs.statSync(EXISTENTIAL_TEXTS_FILE);
+    if (!stat.isFile()) {
+      throw new Error('O arquivo de textos existenciais não é um arquivo regular');
+    }
+
+    if (stat.mtimeMs !== existentialTextsCacheStamp || !existentialTextsCache.length) {
+      const raw = fs.readFileSync(EXISTENTIAL_TEXTS_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      const texts = parsed && Array.isArray(parsed.texts) ? parsed.texts : [];
+      existentialTextsCache = texts
+        .map((item) => (typeof item === 'string' ? item.trim() : ''))
+        .filter(Boolean);
+      existentialTextsCacheStamp = stat.mtimeMs;
+    }
+  } catch (err) {
+    if (!existentialTextsCache.length) {
+      existentialTextsCache = [];
+    }
+  }
+
+  return existentialTextsCache;
 }
 
 function readLikesData() {
@@ -498,6 +530,45 @@ const server = http.createServer((req, res) => {
     );
   }
 
+  if (pathname === '/api/existential-texts') {
+    if (req.method !== 'POST') {
+      return send(
+        res,
+        405,
+        {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store'
+        },
+        JSON.stringify({ error: 'Método não permitido' })
+      );
+    }
+
+    const headerValue = req.headers[EXISTENTIAL_REQUEST_HEADER] || '';
+    if (headerValue !== EXISTENTIAL_REQUEST_EXPECTED_VALUE) {
+      return send(
+        res,
+        403,
+        {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store'
+        },
+        JSON.stringify({ error: 'Requisição não autorizada' })
+      );
+    }
+
+    req.resume();
+    const texts = loadExistentialTexts();
+    return send(
+      res,
+      200,
+      {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store'
+      },
+      JSON.stringify({ texts })
+    );
+  }
+
   if (pathname.startsWith('/videos/')) {
     const fileName = pathname.replace('/videos/', '');
     const filePath = safeJoin(VIDEOS_DIR, fileName);
@@ -522,4 +593,9 @@ server.listen(PORT, HOST, () => {
     console.warn('Atenção: crie a pasta ./videos e coloque seus arquivos de vídeo (.mp4/.webm/.ogv) ou imagem (.jpg/.jpeg/.png/.gif/.webp)');
   }
   ensureLikesStore();
+  if (!fs.existsSync(EXISTENTIAL_TEXTS_FILE)) {
+    console.warn('Atenção: o arquivo data/existential_texts.json não foi encontrado. Os textos existenciais não serão exibidos.');
+  } else {
+    loadExistentialTexts();
+  }
 });
