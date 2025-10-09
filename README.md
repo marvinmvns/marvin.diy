@@ -125,6 +125,45 @@ project/
 - When adding new media types, update `VIDEO_EXTENSIONS`, `IMAGE_EXTENSIONS`, and `MIME` maps consistently.
 - Consider adding playback telemetry or remote management by expanding the API if kiosk monitoring is required.
 
+## Sistema autônomo de autoaperfeiçoamento
+
+O repositório inclui um orquestrador que consulta periodicamente um endpoint compatível com a API da OpenAI para analisar, melhorar e reparar o código automaticamente.
+
+### Como funciona
+
+1. A cada hora (`AUTOIMPROVE_INTERVAL_MS`), o script `autoimprove/index.js` monta um snapshot textual do projeto (excluindo arquivos binários e diretórios ignorados) e o envia para o endpoint configurado (`AUTOIMPROVE_ENDPOINT`, padrão `http://192.168.31.121:8080/v1/chat/completions`).
+2. O modelo precisa responder **somente** com JSON descrevendo arquivos a serem criados/atualizados/removidos, um resumo do que mudou e o foco sugerido para o próximo ciclo.
+3. As alterações são aplicadas imediatamente e registradas em `autoimprove/history.jsonl`, junto com o resumo do ciclo e o motivo.
+4. O servidor Node é reiniciado via `pm2 stop 0` / `pm2 start 0`, e os logs (`pm2 logs 0`) são monitorados por um curto intervalo para detectar erros.
+5. Se forem encontrados erros, um novo pedido é enviado ao modelo contendo o log para gerar correções adicionais.
+6. Um relatório humano em Markdown é acumulado em `autoimprove/reports.md`, contendo o que mudou e o que será avaliado no próximo ciclo.
+
+### Executando
+
+```bash
+npm run autoimprove
+```
+
+O comando dispara um ciclo imediato (se a última execução tiver ocorrido há mais de uma hora) e agenda execuções subsequentes no intervalo definido. Caso queira rodar manualmente fora do agendamento, forneça uma razão como argumento:
+
+```bash
+node autoimprove/index.js "ajuste manual"
+```
+
+### Variáveis de ambiente úteis
+
+| Variável | Descrição | Padrão |
+| --- | --- | --- |
+| `AUTOIMPROVE_ENDPOINT` | URL do endpoint compatível com `/v1/chat/completions`. | `http://192.168.31.121:8080/v1/chat/completions` |
+| `AUTOIMPROVE_MODEL` | Nome do modelo solicitado ao endpoint. | `gpt-4o-mini` |
+| `AUTOIMPROVE_TEMPERATURE` | Temperatura usada nas requisições. | `0.2` |
+| `AUTOIMPROVE_MAX_TOKENS` | Limite máximo de tokens na resposta. | `2048` |
+| `AUTOIMPROVE_INTERVAL_MS` | Intervalo mínimo entre ciclos em milissegundos. | `3600000` (1 hora) |
+| `AUTOIMPROVE_LOG_WINDOW_MS` | Duração (ms) do monitoramento de logs após cada reinício. | `30000` |
+| `AUTOIMPROVE_PM2_ID` | ID/nome do processo gerenciado pelo PM2. | `0` |
+
+> **Importante:** mantenha o endpoint configurado para respeitar limites de requisição e garantir respostas válidas em JSON. O arquivo `data/existential_texts.json` pode ser alterado pelo sistema sempre que o modelo indicar novas entradas, preservando o formato atual.
+
 ## License
 
 This project is provided as-is; adapt or extend it to suit your installation requirements.
