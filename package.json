@@ -1,0 +1,13 @@
+{
+  "name": "marvin-diy",
+  "version": "1.0.0",
+  "description": "Servidor de mídia e sistema de autoaperfeiçoamento autônomo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "autoimprove": "node autoimprove/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
