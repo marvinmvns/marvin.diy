@@ -1,4 +1,5 @@
-const CACHE_NAME = 'video-wall-shell-v1';
+const CACHE_NAME = 'video-wall-shell-v2';
+const MAX_CACHE_AGE = 24 * 60 * 60 * 1000;
 const PRECACHE_URLS = ['/', '/app.js'];
 
 self.addEventListener('install', (event) => {
@@ -42,17 +43,42 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     caches.match(request).then((cached) => {
-      const fetchPromise = fetch(request)
-        .then((response) => {
-          if (response && response.ok) {
-            const cloned = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, cloned));
-          }
-          return response;
-        })
-        .catch(() => cached);
+      if (cached) {
+        const cachedTime = Number(cached.headers.get('sw-cache-time')) || 0;
+        if (Date.now() - cachedTime > MAX_CACHE_AGE) {
+          return fetchAndCache(request, cached);
+        }
+        return cached;
+      }
 
-      return cached || fetchPromise;
+      return fetchAndCache(request);
     })
   );
 });
+
+function fetchAndCache(request, fallback) {
+  return fetch(request)
+    .then((response) => {
+      if (response && response.ok) {
+        const clone = response.clone();
+        clone.blob().then((body) => {
+          const headers = new Headers(clone.headers);
+          headers.set('sw-cache-time', Date.now().toString());
+          caches.open(CACHE_NAME).then((cache) =>
+            cache.put(request, new Response(body, {
+              status: clone.status,
+              statusText: clone.statusText,
+              headers,
+            }))
+          );
+        });
+      }
+      return response;
+    })
+    .catch((error) => {
+      if (fallback) {
+        return fallback;
+      }
+      throw error;
+    });
+}
