@@ -15,6 +15,7 @@ const LIKE_PAYLOAD_LIMIT = 8 * 1024; // 8 KB para metadados enviados pelo client
 const EXISTENTIAL_REQUEST_HEADER = 'x-requested-with';
 const EXISTENTIAL_REQUEST_EXPECTED_VALUE = 'MediaWallPlayer';
 
+const THIRTY_MINUTES_SECONDS = 30 * 60;
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
@@ -34,6 +35,21 @@ const MIME = {
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
+const HTML_EXTENSIONS = new Set(['.html', '.htm']);
+
+function resolveStaticCacheControl(filePath, ext) {
+  const baseName = path.basename(filePath);
+
+  if (baseName === 'sw.js') {
+    return 'no-cache, no-store, must-revalidate';
+  }
+
+  if (HTML_EXTENSIONS.has(ext)) {
+    return 'public, max-age=0, must-revalidate';
+  }
+
+  return `public, max-age=${THIRTY_MINUTES_SECONDS}, must-revalidate`;
+}
 
 function ensureLikesStore() {
   try {
@@ -267,7 +283,7 @@ function serveStatic(filePath, req, res) {
   const ext = path.extname(filePath).toLowerCase();
   const etag = buildEtag(stat);
   const lastModified = stat.mtime.toUTCString();
-  const cacheControl = 'public, max-age=604800';
+  const cacheControl = resolveStaticCacheControl(filePath, ext);
 
   if (req.headers['if-none-match'] === etag) {
     return send(res, 304, {
