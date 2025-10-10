@@ -4,7 +4,7 @@ const projectRoot = path.resolve(__dirname, '..');
 
 module.exports = {
   projectRoot,
-  endpoint: process.env.AUTOIMPROVE_ENDPOINT || 'http://192.168.31.121:8080/v1/chat/completions',
+  endpoint: process.env.AUTOIMPROVE_ENDPOINT || 'http://192.168.31.29:8000/v1/chat/completions/',
   model: process.env.AUTOIMPROVE_MODEL || 'gpt-4o-mini',
   temperature: Number.parseFloat(process.env.AUTOIMPROVE_TEMPERATURE || '0.2'),
   maxTokens: Number.parseInt(process.env.AUTOIMPROVE_MAX_TOKENS || '2048', 10),

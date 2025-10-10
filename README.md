@@ -131,7 +131,7 @@ O repositório inclui um orquestrador que consulta periodicamente um endpoint co
 
 ### Como funciona
 
-1. A cada hora (`AUTOIMPROVE_INTERVAL_MS`), o script `autoimprove/index.js` monta um snapshot textual do projeto (excluindo arquivos binários e diretórios ignorados) e o envia para o endpoint configurado (`AUTOIMPROVE_ENDPOINT`, padrão `http://192.168.31.121:8080/v1/chat/completions`).
+1. A cada hora (`AUTOIMPROVE_INTERVAL_MS`), o script `autoimprove/index.js` monta um snapshot textual do projeto (excluindo arquivos binários e diretórios ignorados) e o envia para o endpoint configurado (`AUTOIMPROVE_ENDPOINT`, padrão `http://192.168.31.29:8000/v1/chat/completions/`).
 2. O modelo precisa responder **somente** com JSON descrevendo arquivos a serem criados/atualizados/removidos, um resumo do que mudou e o foco sugerido para o próximo ciclo.
 3. As alterações são aplicadas imediatamente e registradas em `autoimprove/history.jsonl`, junto com o resumo do ciclo e o motivo.
 4. O servidor Node é reiniciado via `pm2 stop 0` / `pm2 start 0`, e os logs (`pm2 logs 0`) são monitorados por um curto intervalo para detectar erros.
@@ -154,7 +154,7 @@ node autoimprove/index.js "ajuste manual"
 
 | Variável | Descrição | Padrão |
 | --- | --- | --- |
-| `AUTOIMPROVE_ENDPOINT` | URL do endpoint compatível com `/v1/chat/completions`. | `http://192.168.31.121:8080/v1/chat/completions` |
+| `AUTOIMPROVE_ENDPOINT` | URL do endpoint compatível com `/v1/chat/completions`. | `http://192.168.31.29:8000/v1/chat/completions/` |
 | `AUTOIMPROVE_MODEL` | Nome do modelo solicitado ao endpoint. | `gpt-4o-mini` |
 | `AUTOIMPROVE_TEMPERATURE` | Temperatura usada nas requisições. | `0.2` |
 | `AUTOIMPROVE_MAX_TOKENS` | Limite máximo de tokens na resposta. | `2048` |
