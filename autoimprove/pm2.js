@@ -53,7 +53,26 @@ async function restartApp() {
   }
 }
 
-function monitorLogs() {
+async function monitorLogs() {
+  console.log('[autoimprove][pm2] Limpando logs anteriores com pm2 flush para capturar apenas a nova inicialização.');
+  let flushSucceeded = false;
+  try {
+    await runCommand('pm2', ['flush', pm2ProcessId]);
+    flushSucceeded = true;
+  } catch (err) {
+    console.error('[autoimprove][pm2] Falha ao limpar logs do processo específico. Tentando flush global.', err);
+    try {
+      await runCommand('pm2', ['flush']);
+      flushSucceeded = true;
+    } catch (globalErr) {
+      console.error('[autoimprove][pm2] Falha ao limpar logs globalmente. Prosseguindo com leitura mesmo assim.', globalErr);
+    }
+  }
+
+  if (!flushSucceeded) {
+    console.warn('[autoimprove][pm2] Não foi possível limpar os logs. Logs antigos podem aparecer na leitura a seguir.');
+  }
+
   console.log('[autoimprove][pm2] Iniciando captura dos logs via pm2 logs.');
   return new Promise((resolve, reject) => {
     const child = spawn('pm2', ['logs', pm2ProcessId, '--lines', '200'], { stdio: ['ignore', 'pipe', 'pipe'] });
