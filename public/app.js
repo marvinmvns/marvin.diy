@@ -155,8 +155,8 @@ function getRandomDelay(min, max) {
 }
 
 function createTypewriterProfile() {
-  const base = 40 + Math.random() * 260; // 220-480ms base delay
-  const variability = 30 + Math.random() * 260; // add 160-420ms of variation
+  const base = 40 + Math.random() * 100; // 220-480ms base delay
+  const variability = 30 + Math.random() * 10; // add 160-420ms of variation
   const spaceFactor = 0.5 + Math.random() * 0.35; // spaces are naturally quicker
 
   const defaultMin = base;
@@ -167,7 +167,7 @@ function createTypewriterProfile() {
   const cadenceStates = [
     { range: [0.10, 0.20], weight: 0.21 }, // fast burst
     { range: [0.30, 0.50], weight: 0.22 }, // steady typing
-    { range: [0.60, 1.75], weight: 0.23 } // thoughtful slowdown
+    { range: [0.60, 0.90], weight: 0.23 } // thoughtful slowdown
   ];
 
   let currentState = cadenceStates[1];
@@ -198,13 +198,13 @@ function createTypewriterProfile() {
 
   const extraPause = (char) => {
     if (char === '\n') {
-      return 140 + Math.random() * 420;
+      return 140 + Math.random() * 20;
     }
     if (/[\.!?,;:]/.test(char)) {
-      return 90 + Math.random() * 420;
+      return 90 + Math.random() * 40;
     }
     if (Math.random() < 0.065) {
-      return 30 + Math.random() * 280; // occasional reflective pause
+      return 30 + Math.random() * 80; // occasional reflective pause
     }
     return 0;
   };
