@@ -76,14 +76,16 @@ function buildReflectionText({ timestamp, summary, changes }) {
   const readableTimestamp = timestamp.toISOString();
   const humanSummary = summary || 'Nenhum resumo fornecido.';
 
-  const changeLogLines = changes.length
-    ? changes
-        .map((change) => {
-          const description = change.description ? ` — ${change.description}` : '';
-          return `${change.action.toUpperCase()} ${change.path}${description}`;
-        })
-        .join('; ')
-    : 'Nenhum arquivo tocado; a quietude também é uma escolha.';
+  const changeLogEntries = changes.length
+    ? changes.map((change) => {
+        const description = change.description ? ` — ${change.description}` : '';
+        return `${change.action.toUpperCase()} ${change.path}${description}`;
+      })
+    : [];
+
+  const changeLogText = changes.length
+    ? `Changelog existencial: ${changeLogEntries.join(' | ')}. Ajustes enxutos para manter a trama viva.`
+    : 'Changelog existencial: Nenhum arquivo tocado; repouso consciente para que o propósito respire.';
 
   const lifeMusing = [
     'A cada commit automático, lembro que manter o site vivo exige o mesmo cuidado que manter a esperança acesa.',
@@ -95,7 +97,7 @@ function buildReflectionText({ timestamp, summary, changes }) {
 
   return [
     `No ciclo ${readableTimestamp}, foram registradas ${changes.length} alteração(ões).`,
-    `Changelog: ${changeLogLines}.`,
+    changeLogText,
     `Resumo: ${humanSummary}.`,
     `Pensamento sobre a vida: ${lifeText}`
   ].join(' ');
