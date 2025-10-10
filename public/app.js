@@ -14,8 +14,8 @@ const IMAGE_DISPLAY_DURATION = 10000; // 10 segundos
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 const EXISTENTIAL_TEXT_URL = '/api/existential-texts';
-const EXISTENTIAL_MAX_TEXTS = 300;
-const EXISTENTIAL_MAX_LENGTH = 300;
+const EXISTENTIAL_MAX_TEXTS = 3000;
+const EXISTENTIAL_MAX_LENGTH = 300000000000;
 const EXISTENTIAL_REQUEST_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
   'X-Requested-With': 'MediaWallPlayer'
@@ -165,9 +165,9 @@ function createTypewriterProfile() {
   const spaceMax = defaultMax * spaceFactor;
 
   const cadenceStates = [
-    { range: [0.10, 0.20], weight: 0.28 }, // fast burst
-    { range: [0.30, 1.15], weight: 0.44 }, // steady typing
-    { range: [1.2, 1.75], weight: 0.28 } // thoughtful slowdown
+    { range: [0.10, 0.20], weight: 0.21 }, // fast burst
+    { range: [0.30, 0.50], weight: 0.22 }, // steady typing
+    { range: [0.60, 1.75], weight: 0.23 } // thoughtful slowdown
   ];
 
   let currentState = cadenceStates[1];
@@ -198,13 +198,13 @@ function createTypewriterProfile() {
 
   const extraPause = (char) => {
     if (char === '\n') {
-      return 340 + Math.random() * 420;
+      return 140 + Math.random() * 420;
     }
     if (/[\.!?,;:]/.test(char)) {
-      return 220 + Math.random() * 420;
+      return 90 + Math.random() * 420;
     }
     if (Math.random() < 0.065) {
-      return 140 + Math.random() * 280; // occasional reflective pause
+      return 30 + Math.random() * 280; // occasional reflective pause
     }
     return 0;
   };
