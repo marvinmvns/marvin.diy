@@ -11,10 +11,18 @@ function ensureFilePath(targetPath) {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
 }
 
+function safeAppend(targetPath, data) {
+  ensureFilePath(targetPath);
+  try {
+    fs.appendFileSync(targetPath, data, 'utf8');
+  } catch (err) {
+    console.error('[autoimprove][logging] Falha ao registrar informações em', targetPath, err);
+  }
+}
+
 function appendHistory(entry) {
   const line = JSON.stringify(entry);
-  ensureFilePath(historyFile);
-  fs.appendFileSync(historyFile, `${line}\n`, 'utf8');
+  safeAppend(historyFile, `${line}\n`);
 }
 
 function appendReport({ timestamp, summary, nextFocus, changes }) {
@@ -24,7 +32,7 @@ function appendReport({ timestamp, summary, nextFocus, changes }) {
     ? changes.map((item) => `- **${item.action}** ${item.path}${item.description ? ` — ${item.description}` : ''}`).join('\n')
     : '- Nenhuma alteração aplicada';
   const body = `${header}\n**Resumo do ciclo:** ${summary || 'Sem resumo fornecido.'}\n\n**Alterações aplicadas:**\n${changeLines}\n\n**Próxima avaliação:** ${nextFocus || 'Não informado.'}\n`;
-  fs.appendFileSync(reportFile, body, 'utf8');
+  safeAppend(reportFile, body);
 }
 
 function readState() {
@@ -57,25 +65,40 @@ function appendExistentialReflection({ timestamp, summary, changes }) {
 
   payload.texts = [...(payload.texts || []), reflection];
   ensureFilePath(existentialTextsFile);
-  fs.writeFileSync(existentialTextsFile, JSON.stringify(payload, null, 2));
+  try {
+    fs.writeFileSync(existentialTextsFile, JSON.stringify(payload, null, 2));
+  } catch (err) {
+    console.error('[autoimprove][logging] Não foi possível atualizar existential_texts:', err);
+  }
 }
 
 function buildReflectionText({ timestamp, summary, changes }) {
   const readableTimestamp = timestamp.toISOString();
   const humanSummary = summary || 'Nenhum resumo fornecido.';
 
-  if (!changes.length) {
-    return `No ciclo ${readableTimestamp}, nenhuma alteração foi aplicada, mas o sistema registrou: ${humanSummary}`;
-  }
+  const changeLogLines = changes.length
+    ? changes
+        .map((change) => {
+          const description = change.description ? ` — ${change.description}` : '';
+          return `${change.action.toUpperCase()} ${change.path}${description}`;
+        })
+        .join('; ')
+    : 'Nenhum arquivo tocado; a quietude também é uma escolha.';
 
-  const formattedChanges = changes
-    .map((change) => {
-      const description = change.description ? ` — ${change.description}` : '';
-      return `${change.action.toUpperCase()} ${change.path}${description}`;
-    })
-    .join('; ');
+  const lifeMusing = [
+    'A cada commit automático, lembro que manter o site vivo exige o mesmo cuidado que manter a esperança acesa.',
+    'Enquanto o código evolui, anoto que a vida também se refatora em ciclos — nunca idênticos, sempre intencionais.',
+    'Hoje percebi que até logs silenciosos carregam histórias; o silêncio da vida pede ser ouvido como revisamos um diff.'
+  ];
 
-  return `No ciclo ${readableTimestamp}, o sistema aplicou ${changes.length} alteração(ões): ${formattedChanges}. Resumo: ${humanSummary}`;
+  const lifeText = lifeMusing[Math.floor(Math.random() * lifeMusing.length)];
+
+  return [
+    `No ciclo ${readableTimestamp}, foram registradas ${changes.length} alteração(ões).`,
+    `Changelog: ${changeLogLines}.`,
+    `Resumo: ${humanSummary}.`,
+    `Pensamento sobre a vida: ${lifeText}`
+  ].join(' ');
 }
 
 module.exports = {
