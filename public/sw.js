@@ -1,5 +1,5 @@
-const CACHE_NAME = 'video-wall-shell-v2';
-const MAX_CACHE_AGE = 24 * 60 * 60 * 1000;
+const CACHE_NAME = 'video-wall-shell-v3';
+const MAX_CACHE_AGE = 30 * 60 * 1000;
 const PRECACHE_URLS = ['/', '/app.js'];
 
 self.addEventListener('install', (event) => {

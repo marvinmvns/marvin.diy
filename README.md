@@ -93,19 +93,19 @@ project/
 ### HTTP Layer
 - **Videos**: Served with `Cache-Control: public, max-age=31536000, immutable`, plus `ETag` and `Last-Modified` headers. Range requests (`Accept-Ranges: bytes`) are fully supported, enabling efficient seeking and resuming.
 - **Images**: Share the same long-lived cache headers as videos, ensuring quick reloads without re-downloading content.
-- **Static assets**: HTML/JS/CSS responses use `Cache-Control: public, max-age=604800` (7 days) alongside `ETag` and `Last-Modified`.
+- **Static assets**: HTML pages use `Cache-Control: public, max-age=0, must-revalidate` while JS/CSS/JSON assets ship with `Cache-Control: public, max-age=1800, must-revalidate`. The service worker (`sw.js`) is delivered with `Cache-Control: no-cache, no-store, must-revalidate` so browsers pick up updates immediately.
 
 ### Service Worker
 - Registered at `/sw.js` and scoped to the root path.
 - **Pre-cache**: `index.html` and `app.js` on install so the app shell loads offline.
-- **Cache-first strategy**: Responds from cache when available while fetching updates in the background.
+- **Cache-first strategy**: Responds from cache when available while fetching updates in the background. Entries older than 30 minutes trigger a refresh to ensure new deployments reach clients quickly.
 - **Media passthrough**: Requests to `/videos/` are never intercepted so browsers can handle Range requests and native media caching.
 
 ## Deployment Tips
 
 - **Systemd service**: For kiosk setups, wrap `node server.js` in a systemd unit and configure auto-restart.
 - **Reverse proxy**: Optionally place Nginx or Caddy in front for TLS termination. Ensure it preserves `Range` headers and forwards large responses efficiently.
-- **Content updates**: Replace files in `videos/` and reload the browser. Cached static assets may require a hard refresh or cache invalidation if you modify client files.
+- **Content updates**: Replace files in `videos/` and reload the browser. Static assets automatically refresh within 30 minutes (or immediately for `index.html`/`sw.js`), so manual cache clearing is rarely required.
 - **Performance**: Prefer hardware-accelerated video codecs (H.264) for Raspberry Pi compatibility. Keep an eye on CPU usage during long loops.
 
 ## Troubleshooting
