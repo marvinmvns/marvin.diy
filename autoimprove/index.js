@@ -4,7 +4,13 @@ const { buildProjectSnapshot } = require('./file-system');
 const { requestCompletion } = require('./model-client');
 const { parsePlan } = require('./plan-parser');
 const { applyPlan } = require('./plan-runner');
-const { appendHistory, appendReport, readState, writeState } = require('./logging');
+const {
+  appendHistory,
+  appendReport,
+  appendExistentialReflection,
+  readState,
+  writeState
+} = require('./logging');
 const { restartApp, monitorLogs, extractErrors } = require('./pm2');
 
 let isRunningCycle = false;
@@ -119,7 +125,9 @@ async function executeCycle({ reason }) {
   };
 
   appendHistory(historyEntry);
-  appendReport({ timestamp, summary: [summaryText, correctionSummary].filter(Boolean).join(' | '), nextFocus, changes: cumulativeChanges });
+  const combinedSummary = [summaryText, correctionSummary].filter(Boolean).join(' | ');
+  appendReport({ timestamp, summary: combinedSummary, nextFocus, changes: cumulativeChanges });
+  appendExistentialReflection({ timestamp, summary: combinedSummary, changes: cumulativeChanges });
 
   if (detectedIssues.length) {
     console.error('Erros ainda presentes após correções automáticas:', detectedIssues.join('\n'));

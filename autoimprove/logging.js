@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const { historyFile, reportFile, stateFile } = require('./config');
+const {
+  historyFile,
+  reportFile,
+  stateFile,
+  existentialTextsFile
+} = require('./config');
 
 function ensureFilePath(targetPath) {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -36,9 +41,47 @@ function writeState(state) {
   fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
 }
 
+function appendExistentialReflection({ timestamp, summary, changes }) {
+  const reflection = buildReflectionText({ timestamp, summary, changes });
+  let payload = { texts: [] };
+
+  try {
+    const raw = fs.readFileSync(existentialTextsFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.texts)) {
+      payload = parsed;
+    }
+  } catch (err) {
+    // If the file does not exist or is invalid, start from an empty payload.
+  }
+
+  payload.texts = [...(payload.texts || []), reflection];
+  ensureFilePath(existentialTextsFile);
+  fs.writeFileSync(existentialTextsFile, JSON.stringify(payload, null, 2));
+}
+
+function buildReflectionText({ timestamp, summary, changes }) {
+  const readableTimestamp = timestamp.toISOString();
+  const humanSummary = summary || 'Nenhum resumo fornecido.';
+
+  if (!changes.length) {
+    return `No ciclo ${readableTimestamp}, nenhuma alteração foi aplicada, mas o sistema registrou: ${humanSummary}`;
+  }
+
+  const formattedChanges = changes
+    .map((change) => {
+      const description = change.description ? ` — ${change.description}` : '';
+      return `${change.action.toUpperCase()} ${change.path}${description}`;
+    })
+    .join('; ');
+
+  return `No ciclo ${readableTimestamp}, o sistema aplicou ${changes.length} alteração(ões): ${formattedChanges}. Resumo: ${humanSummary}`;
+}
+
 module.exports = {
   appendHistory,
   appendReport,
   readState,
-  writeState
+  writeState,
+  appendExistentialReflection
 };
