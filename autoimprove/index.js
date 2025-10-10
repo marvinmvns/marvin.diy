@@ -199,7 +199,7 @@ async function executeCycle({ reason }) {
   }
 }
 
-async function maybeRunCycle(reason) {
+async function maybeRunCycle(reason, { ignoreInterval = false } = {}) {
   if (isRunningCycle) {
     console.log('[autoimprove] Ignorando execução: já existe um ciclo em andamento.');
     return;
@@ -207,7 +207,7 @@ async function maybeRunCycle(reason) {
   const state = readState();
   const now = Date.now();
   const lastRun = state.lastRun || 0;
-  if (now - lastRun < cycleIntervalMs) {
+  if (!ignoreInterval && now - lastRun < cycleIntervalMs) {
     console.log('[autoimprove] Intervalo mínimo ainda não atingido. Última execução em', new Date(lastRun).toISOString());
     return;
   }
@@ -226,7 +226,7 @@ async function maybeRunCycle(reason) {
   const reason = process.argv[2] ? `Execução manual: ${process.argv[2]}` : 'Execução agendada';
   console.log('[autoimprove] Processo iniciado. Razão inicial:', reason);
   try {
-    await maybeRunCycle(reason);
+    await maybeRunCycle(reason, { ignoreInterval: true });
   } catch (err) {
     console.error('[autoimprove] Erro inesperado na execução inicial:', err);
   }
