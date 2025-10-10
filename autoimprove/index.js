@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-const { projectRoot, projectScanIgnore, cycleIntervalMs } = require('./config');
+const {
+  projectRoot,
+  projectScanIgnore,
+  cycleIntervalMs
+} = require('./config');
 const { buildProjectSnapshot } = require('./file-system');
 const { requestCompletion } = require('./model-client');
 const { parsePlan } = require('./plan-parser');
@@ -24,6 +28,8 @@ function formatSnapshot(snapshot) {
 function buildSystemPrompt() {
   return [
     'Você é um assistente de engenharia de software responsável por aprimorar continuamente este projeto.',
+    'Seu objetivo é otimizar o site e escrever textos sobre a vida alinhados com o estilo de data/existential_texts.json.',
+    'Analise todo o código conhecido do projeto antes de sugerir alterações e sempre proponha melhorias concretas, justificadas e aplicáveis.',
     'Responda **apenas** com JSON seguindo o formato:',
     '{',
     '  "summary": string,',
@@ -33,9 +39,8 @@ function buildSystemPrompt() {
     '  "next_focus": string',
     '}',
     'Cada arquivo listado em "changes" deve conter o conteúdo completo atualizado em "content" quando a ação for "write".',
-    'Mantenha o código funcional, consistente e testável.',
-    'Inclua melhorias de desempenho, clareza, segurança, arquitetura e organização quando apropriado.',
-    'Você pode editar data/existential_texts.json seguindo o formato existente.',
+    'Priorize melhorias que elevem a qualidade do site (UX, performance, acessibilidade, arquitetura) e garanta que textos sobre a vida e pequenos changelogs apareçam quando apropriado.',
+    'Você pode e deve editar data/existential_texts.json mantendo o formato existente quando gerar reflexões.',
     'Explique sucintamente em "summary" o que mudou e em "next_focus" o que avaliar no próximo ciclo.'
   ].join(' ');
 }
@@ -43,7 +48,8 @@ function buildSystemPrompt() {
 function buildPlanPrompt({ snapshot, reason, knownIssues = [] }) {
   const sections = [
     `Motivo do ciclo: ${reason}.`,
-    'Contexto do projeto (apenas arquivos de texto relevantes):',
+    'Objetivo permanente: otimizar o site e escrever textos sobre a vida.',
+    'Contexto do projeto (arquivos de texto relevantes):',
     formatSnapshot(snapshot)
   ];
 
@@ -73,19 +79,51 @@ async function runPlan(plan) {
 }
 
 async function executeCycle({ reason }) {
-  const snapshot = buildProjectSnapshot(projectRoot, projectScanIgnore);
-  writeState({ lastRun: Date.now() });
-  const plan = await askModel({ snapshot, reason });
-  const appliedChanges = await runPlan(plan);
-
-  if (appliedChanges.length) {
-    console.log('Alterações aplicadas:', appliedChanges);
-  } else {
-    console.log('Nenhuma alteração sugerida neste ciclo.');
+  console.log('[autoimprove] Iniciando novo ciclo com motivo:', reason);
+  let snapshot;
+  try {
+    snapshot = buildProjectSnapshot(projectRoot, projectScanIgnore);
+    console.log('[autoimprove] Total de arquivos analisados no snapshot:', snapshot.length);
+  } catch (err) {
+    console.error('[autoimprove] Falha ao montar o snapshot do projeto:', err);
+    throw err;
   }
 
-  await restartApp();
-  const logOutput = await monitorLogs();
+  writeState({ lastRun: Date.now() });
+
+  let plan;
+  try {
+    console.log('[autoimprove] Solicitando plano ao modelo com objetivo de otimizar o site e escrever textos sobre a vida...');
+    plan = await askModel({ snapshot, reason });
+    console.log('[autoimprove] Plano recebido com resumo:', plan.summary || 'sem resumo informado');
+  } catch (err) {
+    console.error('[autoimprove] Erro ao consultar o modelo:', err);
+    throw err;
+  }
+
+  let appliedChanges = [];
+  try {
+    appliedChanges = await runPlan(plan);
+    if (appliedChanges.length) {
+      console.log('[autoimprove] Alterações aplicadas com sucesso:', appliedChanges);
+    } else {
+      console.log('[autoimprove] Nenhuma alteração sugerida neste ciclo.');
+    }
+  } catch (err) {
+    console.error('[autoimprove] Falha ao aplicar plano sugerido:', err);
+    throw err;
+  }
+
+  let logOutput = { logs: '', errors: '' };
+  try {
+    console.log('[autoimprove] Reiniciando aplicação via PM2 para validar alterações...');
+    await restartApp();
+    console.log('[autoimprove] Aplicação reiniciada. Acompanhando logs para detectar possíveis erros.');
+    logOutput = await monitorLogs();
+  } catch (err) {
+    console.error('[autoimprove] Falha ao reiniciar ou monitorar logs da aplicação:', err);
+  }
+
   let detectedIssues = extractErrors(logOutput);
 
   let correctionSummary = '';
@@ -94,16 +132,41 @@ async function executeCycle({ reason }) {
   let summaryText = plan.summary || '';
 
   if (detectedIssues.length) {
-    console.warn('Problemas detectados nos logs:', detectedIssues);
-    const correctionPlan = await askModel({ snapshot: buildProjectSnapshot(projectRoot, projectScanIgnore), reason: 'Correção automática após erro', knownIssues: detectedIssues });
-    const correctionChanges = await runPlan(correctionPlan);
+    console.warn('[autoimprove] Problemas detectados nos logs:', detectedIssues);
+    let correctionPlan;
+    try {
+      console.log('[autoimprove] Solicitando plano de correção ao modelo...');
+      correctionPlan = await askModel({ snapshot: buildProjectSnapshot(projectRoot, projectScanIgnore), reason: 'Correção automática após erro', knownIssues: detectedIssues });
+    } catch (err) {
+      console.error('[autoimprove] Erro ao solicitar plano de correção:', err);
+      correctionSummary = 'Falha ao solicitar plano de correção ao modelo.';
+      correctionPlan = null;
+    }
+
+    let correctionChanges = [];
+    if (correctionPlan) {
+      try {
+        correctionChanges = await runPlan(correctionPlan);
+      } catch (err) {
+        console.error('[autoimprove] Falha ao aplicar plano de correção:', err);
+        correctionSummary = 'Falha ao aplicar correções sugeridas.';
+      }
+    }
+
     if (correctionChanges.length) {
       cumulativeChanges.push(...correctionChanges);
       summaryText = [summaryText, correctionPlan.summary].filter(Boolean).join(' | ');
       nextFocus = correctionPlan.nextFocus || nextFocus;
-      await restartApp();
-      const retryLogs = await monitorLogs();
-      detectedIssues = extractErrors(retryLogs);
+      try {
+        console.log('[autoimprove] Reiniciando aplicação após correções...');
+        await restartApp();
+        console.log('[autoimprove] Monitorando logs após correções.');
+        const retryLogs = await monitorLogs();
+        detectedIssues = extractErrors(retryLogs);
+      } catch (err) {
+        console.error('[autoimprove] Falha ao reiniciar ou ler logs após correção:', err);
+        correctionSummary = 'Não foi possível validar as correções devido a erro no PM2 ou na leitura de logs.';
+      }
       if (detectedIssues.length) {
         correctionSummary = `Persistem problemas após correção: ${detectedIssues.join('; ')}`;
       } else {
@@ -130,18 +193,22 @@ async function executeCycle({ reason }) {
   appendExistentialReflection({ timestamp, summary: combinedSummary, changes: cumulativeChanges });
 
   if (detectedIssues.length) {
-    console.error('Erros ainda presentes após correções automáticas:', detectedIssues.join('\n'));
+    console.error('[autoimprove] Erros ainda presentes após correções automáticas:\n', detectedIssues.join('\n'));
+  } else {
+    console.log('[autoimprove] Ciclo concluído sem erros pendentes.');
   }
 }
 
 async function maybeRunCycle(reason) {
   if (isRunningCycle) {
+    console.log('[autoimprove] Ignorando execução: já existe um ciclo em andamento.');
     return;
   }
   const state = readState();
   const now = Date.now();
   const lastRun = state.lastRun || 0;
   if (now - lastRun < cycleIntervalMs) {
+    console.log('[autoimprove] Intervalo mínimo ainda não atingido. Última execução em', new Date(lastRun).toISOString());
     return;
   }
 
@@ -149,7 +216,7 @@ async function maybeRunCycle(reason) {
   try {
     await executeCycle({ reason });
   } catch (err) {
-    console.error('Falha ao executar ciclo de autoaperfeiçoamento:', err);
+    console.error('[autoimprove] Falha ao executar ciclo de autoaperfeiçoamento:', err);
   } finally {
     isRunningCycle = false;
   }
@@ -157,8 +224,14 @@ async function maybeRunCycle(reason) {
 
 (async () => {
   const reason = process.argv[2] ? `Execução manual: ${process.argv[2]}` : 'Execução agendada';
-  await maybeRunCycle(reason);
+  console.log('[autoimprove] Processo iniciado. Razão inicial:', reason);
+  try {
+    await maybeRunCycle(reason);
+  } catch (err) {
+    console.error('[autoimprove] Erro inesperado na execução inicial:', err);
+  }
   setInterval(() => {
+    console.log('[autoimprove] Agendando nova verificação automática.');
     maybeRunCycle('Execução agendada');
   }, cycleIntervalMs);
 })();
