@@ -23,5 +23,6 @@ module.exports = {
   historyFile: path.join(projectRoot, 'autoimprove', 'history.jsonl'),
   reportFile: path.join(projectRoot, 'autoimprove', 'reports.md'),
   stateFile: path.join(projectRoot, 'autoimprove', 'state.json'),
+  existentialTextsFile: path.join(projectRoot, 'data', 'existential_texts.json'),
   pm2ProcessId: process.env.AUTOIMPROVE_PM2_ID || '0'
 };
