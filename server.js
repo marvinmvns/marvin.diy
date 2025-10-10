@@ -9,6 +9,9 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const VIDEOS_DIR = path.join(__dirname, 'videos');
 const DATA_DIR = path.join(__dirname, 'data');
 const LIKES_FILE = path.join(__dirname, 'likes.json');
+const SUGGESTIONS_FILE = path.join(__dirname, 'sugestoes.json');
+const HISTORY_FILE = path.join(__dirname, 'autoimprove', 'history.jsonl');
+const REPORTS_FILE = path.join(__dirname, 'autoimprove', 'reports.md');
 const EXISTENTIAL_TEXTS_FILE = path.join(DATA_DIR, 'existential_texts.json');
 
 const LIKE_PAYLOAD_LIMIT = 8 * 1024; // 8 KB para metadados enviados pelo cliente
@@ -16,6 +19,8 @@ const EXISTENTIAL_REQUEST_HEADER = 'x-requested-with';
 const EXISTENTIAL_REQUEST_EXPECTED_VALUE = 'MediaWallPlayer';
 
 const THIRTY_MINUTES_SECONDS = 30 * 60;
+const SUGGESTION_PAYLOAD_LIMIT = 2 * 1024;
+const SUGGESTION_COOLDOWN_MS = 60 * 1000;
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
@@ -36,6 +41,8 @@ const MIME = {
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 const HTML_EXTENSIONS = new Set(['.html', '.htm']);
+
+const suggestionCooldowns = new Map();
 
 function resolveStaticCacheControl(filePath, ext) {
   const baseName = path.basename(filePath);
@@ -73,6 +80,29 @@ function ensureLikesStore() {
       fs.writeFileSync(LIKES_FILE, JSON.stringify(fallback, null, 2));
     } catch (writeErr) {
       console.error('Não foi possível preparar o arquivo de curtidas:', writeErr);
+    }
+  }
+}
+
+function ensureSuggestionsStore() {
+  try {
+    if (!fs.existsSync(SUGGESTIONS_FILE)) {
+      const initial = { suggestions: [] };
+      fs.writeFileSync(SUGGESTIONS_FILE, JSON.stringify(initial, null, 2));
+      return;
+    }
+
+    const raw = fs.readFileSync(SUGGESTIONS_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.suggestions)) {
+      throw new Error('Formato inválido para sugestoes.json');
+    }
+  } catch (err) {
+    try {
+      const fallback = { suggestions: [] };
+      fs.writeFileSync(SUGGESTIONS_FILE, JSON.stringify(fallback, null, 2));
+    } catch (writeErr) {
+      console.error('Não foi possível preparar o arquivo de sugestões:', writeErr);
     }
   }
 }
@@ -143,6 +173,11 @@ function sanitizeString(value, maxLength) {
   return trimmed.length > maxLength ? trimmed.slice(0, maxLength) : trimmed;
 }
 
+function sanitizeSuggestionText(value) {
+  const text = sanitizeString(value, 512);
+  return text ? text.replace(/\s+/g, ' ').trim() : undefined;
+}
+
 function sanitizeNumber(value) {
   if (typeof value !== 'number') return undefined;
   if (!Number.isFinite(value)) return undefined;
@@ -197,6 +232,134 @@ function appendLikeEntry(entry) {
   return nextTotal;
 }
 
+function readSuggestions() {
+  try {
+    const raw = fs.readFileSync(SUGGESTIONS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data.suggestions) ? data.suggestions : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function writeSuggestions(list) {
+  const payload = {
+    suggestions: Array.isArray(list)
+      ? list.map((item) => ({
+          text: sanitizeSuggestionText(item.text) || '',
+          timestamp: typeof item.timestamp === 'string' ? item.timestamp : undefined
+        })).filter((item) => item.text)
+      : []
+  };
+  fs.writeFileSync(SUGGESTIONS_FILE, JSON.stringify(payload, null, 2));
+}
+
+function readHistoryEntries() {
+  try {
+    if (!fs.existsSync(HISTORY_FILE)) return [];
+    const lines = fs.readFileSync(HISTORY_FILE, 'utf8').split(/\r?\n/).filter(Boolean);
+    return lines
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch (err) {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch (err) {
+    return [];
+  }
+}
+
+function readReportsText() {
+  try {
+    if (!fs.existsSync(REPORTS_FILE)) return '';
+    return fs.readFileSync(REPORTS_FILE, 'utf8');
+  } catch (err) {
+    return '';
+  }
+}
+
+function buildHistorySearchText(entries) {
+  if (!Array.isArray(entries) || !entries.length) return '';
+  const parts = [];
+  entries.forEach((entry) => {
+    if (entry.summary) parts.push(String(entry.summary));
+    if (entry.correctionSummary) parts.push(String(entry.correctionSummary));
+    if (entry.nextFocus) parts.push(String(entry.nextFocus));
+    if (Array.isArray(entry.changes)) {
+      entry.changes.forEach((change) => {
+        if (!change) return;
+        if (change.path) parts.push(String(change.path));
+        if (change.description) parts.push(String(change.description));
+      });
+    }
+  });
+  return parts.join('\n');
+}
+
+function cleanupImplementedSuggestions(currentSuggestions) {
+  const suggestions = Array.isArray(currentSuggestions) ? currentSuggestions : [];
+  if (!suggestions.length) return suggestions;
+
+  const historyText = buildHistorySearchText(readHistoryEntries()).toLowerCase();
+  const reportsText = readReportsText().toLowerCase();
+
+  return suggestions.filter((item) => {
+    if (!item || !item.text) return false;
+    const normalized = item.text.toLowerCase();
+    if (!normalized) return false;
+    if (historyText.includes(normalized)) return false;
+    if (reportsText.includes(normalized)) return false;
+    return true;
+  });
+}
+
+function addSuggestion(text) {
+  const sanitized = sanitizeSuggestionText(text);
+  if (!sanitized) {
+    const error = new Error('Sugestão inválida');
+    error.code = 'INVALID_SUGGESTION';
+    throw error;
+  }
+
+  const existing = cleanupImplementedSuggestions(readSuggestions());
+  const lower = sanitized.toLowerCase();
+  const historyText = buildHistorySearchText(readHistoryEntries()).toLowerCase();
+  const reportsText = readReportsText().toLowerCase();
+
+  if (historyText.includes(lower) || reportsText.includes(lower)) {
+    const error = new Error('Sugestão já contemplada');
+    error.code = 'SUGGESTION_ALREADY_DONE';
+    throw error;
+  }
+
+  const alreadyExists = existing.some((item) => typeof item.text === 'string' && item.text.toLowerCase() === lower);
+  if (alreadyExists) {
+    const error = new Error('Sugestão já registrada');
+    error.code = 'SUGGESTION_DUPLICATE';
+    throw error;
+  }
+
+  const updated = [
+    ...existing,
+    {
+      text: sanitized,
+      timestamp: new Date().toISOString()
+    }
+  ];
+
+  writeSuggestions(updated);
+  return updated;
+}
+
+function getSuggestions() {
+  const cleaned = cleanupImplementedSuggestions(readSuggestions());
+  writeSuggestions(cleaned);
+  return cleaned;
+}
+
 function parseJsonBody(req, limit = LIKE_PAYLOAD_LIMIT) {
   return new Promise((resolve, reject) => {
     let received = 0;
@@ -247,6 +410,23 @@ function send(res, status, headers = {}, body) {
   } else {
     res.end(body || '');
   }
+}
+
+function isSuggestionOnCooldown(ip) {
+  if (!ip) return false;
+  const expiresAt = suggestionCooldowns.get(ip);
+  if (!expiresAt) return false;
+  const now = Date.now();
+  if (expiresAt > now) {
+    return true;
+  }
+  suggestionCooldowns.delete(ip);
+  return false;
+}
+
+function registerSuggestionCooldown(ip) {
+  if (!ip) return;
+  suggestionCooldowns.set(ip, Date.now() + SUGGESTION_COOLDOWN_MS);
 }
 
 function listMedia() {
@@ -546,6 +726,155 @@ const server = http.createServer((req, res) => {
     );
   }
 
+  if (pathname === '/api/suggestions') {
+    if (req.method === 'GET') {
+      const suggestions = getSuggestions();
+      return send(
+        res,
+        200,
+        {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store'
+        },
+        JSON.stringify({ suggestions })
+      );
+    }
+
+    if (req.method === 'POST') {
+      const ip = getClientIp(req);
+      if (isSuggestionOnCooldown(ip)) {
+        return send(
+          res,
+          429,
+          {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store'
+          },
+          JSON.stringify({ error: 'Aguarde antes de enviar outra sugestão.' })
+        );
+      }
+
+      parseJsonBody(req, SUGGESTION_PAYLOAD_LIMIT)
+        .then((payload) => {
+          try {
+            const suggestion = sanitizeSuggestionText(payload && payload.suggestion);
+            if (!suggestion) {
+              const error = new Error('Sugestão inválida');
+              error.code = 'INVALID_SUGGESTION';
+              throw error;
+            }
+
+            const updated = addSuggestion(suggestion);
+            registerSuggestionCooldown(ip);
+            send(
+              res,
+              201,
+              {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Cache-Control': 'no-store'
+              },
+              JSON.stringify({ suggestions: updated })
+            );
+          } catch (err) {
+            if (err && err.code === 'INVALID_SUGGESTION') {
+              return send(
+                res,
+                400,
+                {
+                  'Content-Type': 'application/json; charset=utf-8',
+                  'Cache-Control': 'no-store'
+                },
+                JSON.stringify({ error: 'Sugestão inválida.' })
+              );
+            }
+            if (err && err.code === 'SUGGESTION_DUPLICATE') {
+              registerSuggestionCooldown(ip);
+              return send(
+                res,
+                409,
+                {
+                  'Content-Type': 'application/json; charset=utf-8',
+                  'Cache-Control': 'no-store'
+                },
+                JSON.stringify({ error: 'Sugestão já registrada.' })
+              );
+            }
+            if (err && err.code === 'SUGGESTION_ALREADY_DONE') {
+              registerSuggestionCooldown(ip);
+              return send(
+                res,
+                200,
+                {
+                  'Content-Type': 'application/json; charset=utf-8',
+                  'Cache-Control': 'no-store'
+                },
+                JSON.stringify({
+                  message: 'Essa sugestão já foi implementada, então removemos duplicatas.',
+                  suggestions: getSuggestions()
+                })
+              );
+            }
+
+            console.error('Erro ao registrar sugestão:', err);
+            return send(
+              res,
+              500,
+              {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Cache-Control': 'no-store'
+              },
+              JSON.stringify({ error: 'Erro interno ao salvar sugestão.' })
+            );
+          }
+        })
+        .catch((err) => {
+          if (err && err.code === 'PAYLOAD_TOO_LARGE') {
+            return send(
+              res,
+              413,
+              {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Cache-Control': 'no-store'
+              },
+              JSON.stringify({ error: 'Sugestão muito grande.' })
+            );
+          }
+          if (err && err.code === 'INVALID_JSON') {
+            return send(
+              res,
+              400,
+              {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Cache-Control': 'no-store'
+              },
+              JSON.stringify({ error: 'JSON inválido.' })
+            );
+          }
+          console.error('Erro ao processar sugestão:', err);
+          return send(
+            res,
+            400,
+            {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store'
+            },
+            JSON.stringify({ error: 'Requisição inválida.' })
+          );
+        });
+      return;
+    }
+
+    return send(
+      res,
+      405,
+      {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store'
+      },
+      JSON.stringify({ error: 'Método não permitido' })
+    );
+  }
+
   if (pathname === '/api/existential-texts') {
     if (req.method !== 'POST') {
       return send(
@@ -609,6 +938,7 @@ server.listen(PORT, HOST, () => {
     console.warn('Atenção: crie a pasta ./videos e coloque seus arquivos de vídeo (.mp4/.webm/.ogv) ou imagem (.jpg/.jpeg/.png/.gif/.webp)');
   }
   ensureLikesStore();
+  ensureSuggestionsStore();
   if (!fs.existsSync(EXISTENTIAL_TEXTS_FILE)) {
     console.warn('Atenção: o arquivo data/existential_texts.json não foi encontrado. Os textos existenciais não serão exibidos.');
   } else {
