@@ -29,11 +29,42 @@ async function requestCompletion(messages, { responseFormat = 'json_object' } = 
   }
 
   const [{ message }] = data.choices;
-  if (!message || typeof message.content !== 'string') {
+  if (!message || message.content == null) {
     throw new Error('Model response missing content');
   }
 
-  return message.content;
+  if (typeof message.content === 'string') {
+    return message.content;
+  }
+
+  if (Array.isArray(message.content)) {
+    const text = message.content
+      .map((part) => {
+        if (typeof part === 'string') {
+          return part;
+        }
+        if (part && typeof part === 'object') {
+          if (typeof part.text === 'string') {
+            return part.text;
+          }
+          if (Array.isArray(part.text)) {
+            return part.text.join('');
+          }
+          if (typeof part.content === 'string') {
+            return part.content;
+          }
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+
+    if (text) {
+      return text;
+    }
+  }
+
+  throw new Error('Model response missing textual content');
 }
 
 module.exports = {
