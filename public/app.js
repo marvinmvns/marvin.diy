@@ -9,6 +9,13 @@ const likeButton = $('#floatingLike');
 const likeCount = $('#likeCount');
 const existentialBox = $('#existentialBox');
 const existentialText = $('#existentialText');
+const suggestionPanel = $('#suggestionPanel');
+const suggestionForm = $('#suggestionForm');
+const suggestionInput = $('#suggestionInput');
+const suggestionList = $('#suggestionList');
+const suggestionFeedback = $('#suggestionFeedback');
+const suggestionEmptyState = $('#suggestionEmptyState');
+const suggestionButton = $('#btnSuggestionSubmit');
 
 const IMAGE_DISPLAY_DURATION = 10000; // 10 segundos
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
@@ -20,6 +27,8 @@ const EXISTENTIAL_REQUEST_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
   'X-Requested-With': 'MediaWallPlayer'
 };
+const SUGGESTION_ENDPOINT = '/api/suggestions';
+const SUGGESTION_COOLDOWN_MS = 60 * 1000;
 
 let playlist = [];
 let index = 0;
@@ -39,6 +48,8 @@ let existentialIsWriting = false;
 let existentialPendingRequest = false;
 let existentialPendingAdvance = false;
 let existentialCycleTimer = null;
+let suggestionCooldownTimer = null;
+let isSendingSuggestion = false;
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i -= 1) {
@@ -60,6 +71,161 @@ function setLikeCount(value) {
   if (!likeCount) return;
   const display = Number.isFinite(value) ? value : 0;
   likeCount.textContent = String(display);
+}
+
+function setSuggestionFeedback(message, tone = 'neutral') {
+  if (!suggestionFeedback) return;
+  suggestionFeedback.textContent = message || '';
+  if (tone === 'success') {
+    suggestionFeedback.style.color = 'rgba(134, 239, 172, 0.92)';
+  } else if (tone === 'error') {
+    suggestionFeedback.style.color = 'rgba(248, 113, 113, 0.92)';
+  } else {
+    suggestionFeedback.style.color = 'rgba(244, 244, 245, 0.85)';
+  }
+}
+
+function setSuggestionButtonState(disabled, label) {
+  if (!suggestionButton) return;
+  suggestionButton.disabled = Boolean(disabled);
+  suggestionButton.textContent = label || (disabled ? 'Aguarde...' : 'Enviar');
+}
+
+function clearSuggestionCooldown() {
+  if (suggestionCooldownTimer) {
+    clearTimeout(suggestionCooldownTimer);
+    suggestionCooldownTimer = null;
+  }
+}
+
+function startSuggestionCooldown(duration = SUGGESTION_COOLDOWN_MS) {
+  if (!suggestionButton) return;
+  clearSuggestionCooldown();
+  setSuggestionButtonState(true, 'Aguarde...');
+  suggestionCooldownTimer = setTimeout(() => {
+    setSuggestionButtonState(false, 'Enviar');
+    suggestionCooldownTimer = null;
+    setSuggestionFeedback('', 'neutral');
+  }, duration);
+}
+
+function renderSuggestionList(items) {
+  if (!suggestionList || !suggestionEmptyState) return;
+  suggestionList.innerHTML = '';
+  const entries = Array.isArray(items) ? items : [];
+  if (!entries.length) {
+    suggestionEmptyState.hidden = false;
+    return;
+  }
+  suggestionEmptyState.hidden = true;
+  const formatter = (() => {
+    try {
+      return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    } catch (err) {
+      return null;
+    }
+  })();
+  entries
+    .slice()
+    .sort((a, b) => {
+      const ta = a && typeof a.timestamp === 'string' ? new Date(a.timestamp).getTime() : 0;
+      const tb = b && typeof b.timestamp === 'string' ? new Date(b.timestamp).getTime() : 0;
+      const safeA = Number.isFinite(ta) ? ta : 0;
+      const safeB = Number.isFinite(tb) ? tb : 0;
+      return safeB - safeA;
+    })
+    .forEach((entry) => {
+      if (!entry || typeof entry.text !== 'string') return;
+      const li = document.createElement('li');
+      const textBlock = document.createElement('div');
+      textBlock.textContent = entry.text;
+      li.appendChild(textBlock);
+      if (entry.timestamp && formatter) {
+        const date = new Date(entry.timestamp);
+        if (!Number.isNaN(date.getTime())) {
+          const timeEl = document.createElement('time');
+          timeEl.dateTime = date.toISOString();
+          timeEl.textContent = formatter.format(date);
+          li.appendChild(timeEl);
+        }
+      }
+      suggestionList.appendChild(li);
+    });
+}
+
+async function fetchSuggestionList() {
+  if (!suggestionPanel) return;
+  try {
+    const response = await fetch(SUGGESTION_ENDPOINT, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error('Resposta inesperada');
+    }
+    const data = await response.json();
+    renderSuggestionList(data && Array.isArray(data.suggestions) ? data.suggestions : []);
+    setSuggestionFeedback('', 'neutral');
+    if (!suggestionCooldownTimer && !isSendingSuggestion) {
+      setSuggestionButtonState(false, 'Enviar');
+    }
+  } catch (err) {
+    setSuggestionFeedback('Não foi possível carregar as sugestões agora.', 'error');
+  }
+}
+
+async function submitSuggestion(value) {
+  if (!value || isSendingSuggestion || !suggestionPanel) return;
+  isSendingSuggestion = true;
+  setSuggestionFeedback('Enviando sugestão...', 'neutral');
+  setSuggestionButtonState(true, 'Enviando...');
+  if (suggestionInput) {
+    suggestionInput.disabled = true;
+  }
+
+  try {
+    const response = await fetch(SUGGESTION_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8'
+      },
+      body: JSON.stringify({ suggestion: value })
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 429) {
+      setSuggestionFeedback(data && data.error ? data.error : 'Você enviou sugestões demais. Tente novamente em instantes.', 'error');
+      startSuggestionCooldown();
+      return;
+    }
+
+    if (!response.ok) {
+      const message = data && data.error ? data.error : 'Não foi possível salvar a sugestão.';
+      throw new Error(message);
+    }
+
+    const list = data && Array.isArray(data.suggestions) ? data.suggestions : [];
+    renderSuggestionList(list);
+    const successMessage = data && typeof data.message === 'string'
+      ? data.message
+      : 'Sugestão enviada! Aguarde um momento antes de enviar outra.';
+    setSuggestionFeedback(successMessage, 'success');
+    if (suggestionInput) {
+      suggestionInput.value = '';
+      suggestionInput.blur();
+    }
+    startSuggestionCooldown();
+  } catch (err) {
+    setSuggestionFeedback(err.message || 'Não foi possível salvar a sugestão.', 'error');
+    setSuggestionButtonState(false, 'Enviar');
+    if (suggestionInput) {
+      suggestionInput.disabled = false;
+      suggestionInput.focus();
+    }
+  } finally {
+    isSendingSuggestion = false;
+    if (suggestionInput && suggestionInput.disabled) {
+      suggestionInput.disabled = false;
+    }
+  }
 }
 
 function fetchExistentialTexts() {
@@ -682,6 +848,25 @@ player.addEventListener('error', () => {
 player.addEventListener('playing', () => {
   showMessage('');
 });
+
+if (suggestionForm) {
+  suggestionForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (suggestionButton && suggestionButton.disabled) {
+      return;
+    }
+    const value = suggestionInput ? suggestionInput.value.trim() : '';
+    if (!value) {
+      setSuggestionFeedback('Escreva uma ideia antes de enviar.', 'error');
+      if (suggestionInput) {
+        suggestionInput.focus();
+      }
+      return;
+    }
+    submitSuggestion(value);
+  });
+  fetchSuggestionList();
+}
 
 fetchExistentialTexts().catch(() => {});
 scheduleExistentialReflection(3000, 7000);
