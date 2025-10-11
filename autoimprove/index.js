@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
 const {
   projectRoot,
   projectScanIgnore,
@@ -16,6 +18,85 @@ const {
   writeState
 } = require('./logging');
 const { restartApp, monitorLogs, extractErrors } = require('./pm2');
+
+const suggestionsFile = path.join(projectRoot, 'sugestoes.json');
+
+function normalizeForSearch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function readSuggestionEntries() {
+  if (!fs.existsSync(suggestionsFile)) {
+    return [];
+  }
+
+  try {
+    const raw = fs.readFileSync(suggestionsFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    const suggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+    return suggestions
+      .map((entry) => {
+        if (!entry) return '';
+        if (typeof entry === 'string') {
+          return entry.trim();
+        }
+        if (typeof entry.text === 'string') {
+          return entry.text.trim();
+        }
+        return '';
+      })
+      .filter(Boolean);
+  } catch (err) {
+    return [];
+  }
+}
+
+function categorizeSuggestionTexts(texts) {
+  const activities = [];
+  const others = [];
+
+  texts.forEach((text) => {
+    const normalized = normalizeForSearch(text);
+    if (normalized.includes('atividades a fazer')) {
+      activities.push(text);
+    } else {
+      others.push(text);
+    }
+  });
+
+  return { activities, others };
+}
+
+function buildSuggestionsPromptSection() {
+  const entries = readSuggestionEntries();
+  if (!entries.length) {
+    return '';
+  }
+
+  const { activities, others } = categorizeSuggestionTexts(entries);
+  const lines = [];
+
+  if (activities.length) {
+    lines.push('Atividades a fazer registradas em sugestoes.json (prioritárias):');
+    lines.push(activities.map((text) => `- ${text}`).join('\n'));
+  }
+
+  if (others.length) {
+    lines.push('Outras sugestões registradas em sugestoes.json:');
+    lines.push(others.map((text) => `- ${text}`).join('\n'));
+  }
+
+  if (activities.length) {
+    lines.push('Priorize concluir as atividades a fazer acima antes de propor novas melhorias ou reflexões.');
+  } else if (others.length) {
+    lines.push('Considere as sugestões listadas ao planejar melhorias e reflexões.');
+  }
+
+  return lines.join('\n').trim();
+}
 
 let isRunningCycle = false;
 
@@ -52,6 +133,11 @@ function buildPlanPrompt({ snapshot, reason, knownIssues = [] }) {
     'Contexto do projeto (arquivos de texto relevantes):',
     formatSnapshot(snapshot)
   ];
+
+  const suggestionsSection = buildSuggestionsPromptSection();
+  if (suggestionsSection) {
+    sections.splice(2, 0, suggestionsSection);
+  }
 
   if (knownIssues.length) {
     sections.push('Problemas detectados nos logs recentes:', knownIssues.map((issue) => `- ${issue}`).join('\n'));
