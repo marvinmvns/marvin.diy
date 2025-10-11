@@ -10,6 +10,9 @@ module.exports = {
   maxTokens: Number.parseInt(process.env.AUTOIMPROVE_MAX_TOKENS || '20480', 10),
   cycleIntervalMs: Number.parseInt(process.env.AUTOIMPROVE_INTERVAL_MS || String(60 * 60 * 1000), 10),
   logMonitorDurationMs: Number.parseInt(process.env.AUTOIMPROVE_LOG_WINDOW_MS || String(30 * 1000), 10),
+  logErrorPreContext: Number.parseInt(process.env.AUTOIMPROVE_LOG_ERROR_PRE_CONTEXT || '6', 10),
+  logErrorPostContext: Number.parseInt(process.env.AUTOIMPROVE_LOG_ERROR_POST_CONTEXT || '24', 10),
+  logMaxCapturedLines: Number.parseInt(process.env.AUTOIMPROVE_LOG_MAX_CAPTURED_LINES || '80', 10),
   projectScanIgnore: [
     'node_modules',
     '.git',
