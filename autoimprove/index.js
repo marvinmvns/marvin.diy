@@ -54,6 +54,21 @@ function readSuggestionEntries() {
   }
 }
 
+function clearSuggestionEntries() {
+  const emptyPayload = {
+    suggestions: []
+  };
+
+  try {
+    fs.writeFileSync(
+      suggestionsFile,
+      `${JSON.stringify(emptyPayload, null, 2)}\n`
+    );
+  } catch (err) {
+    console.error('[autoimprove] Não foi possível limpar sugestoes.json:', err);
+  }
+}
+
 function categorizeSuggestionTexts(texts) {
   const activities = [];
   const others = [];
@@ -166,6 +181,7 @@ async function runPlan(plan) {
 
 async function executeCycle({ reason }) {
   console.log('[autoimprove] Iniciando novo ciclo com motivo:', reason);
+  const suggestionsBeforeCycle = readSuggestionEntries();
   let snapshot;
   try {
     snapshot = buildProjectSnapshot(projectRoot, projectScanIgnore);
@@ -277,6 +293,11 @@ async function executeCycle({ reason }) {
   const combinedSummary = [summaryText, correctionSummary].filter(Boolean).join(' | ');
   appendReport({ timestamp, summary: combinedSummary, nextFocus, changes: cumulativeChanges });
   appendExistentialReflection({ timestamp, summary: combinedSummary, changes: cumulativeChanges });
+
+  if (suggestionsBeforeCycle.length && cumulativeChanges.length && !detectedIssues.length) {
+    console.log('[autoimprove] Sugestões consumidas com sucesso. Limpando sugestoes.json.');
+    clearSuggestionEntries();
+  }
 
   if (detectedIssues.length) {
     console.error('[autoimprove] Erros ainda presentes após correções automáticas:\n', detectedIssues.join('\n'));
