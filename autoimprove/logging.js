@@ -51,6 +51,11 @@ function writeState(state) {
 
 function appendExistentialReflection({ timestamp, summary, changes }) {
   const reflection = buildReflectionText({ timestamp, summary, changes });
+  const MAX_REFLECTION_LENGTH = 1000;
+  const normalizedReflection =
+    reflection.length > MAX_REFLECTION_LENGTH
+      ? reflection.slice(0, MAX_REFLECTION_LENGTH)
+      : reflection;
   let payload = { texts: [] };
 
   try {
@@ -63,7 +68,7 @@ function appendExistentialReflection({ timestamp, summary, changes }) {
     // If the file does not exist or is invalid, start from an empty payload.
   }
 
-  payload.texts = [...(payload.texts || []), reflection];
+  payload.texts = [...(payload.texts || []), normalizedReflection];
   ensureFilePath(existentialTextsFile);
   try {
     fs.writeFileSync(existentialTextsFile, JSON.stringify(payload, null, 2));
