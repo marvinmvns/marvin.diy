@@ -80,19 +80,19 @@ function buildSuggestionsPromptSection() {
   const lines = [];
 
   if (activities.length) {
-    lines.push('Atividades a fazer registradas em sugestoes.json (prioritárias):');
-    lines.push(activities.map((text) => `- ${text}`).join('\n'));
+    lines.push('Atividades a fazer registradas em sugestoes.json (prioritárias e obrigatórias):');
+    lines.push(activities.map((text, index) => `- [A${index + 1}] ${text}`).join('\n'));
   }
 
   if (others.length) {
-    lines.push('Outras sugestões registradas em sugestoes.json:');
-    lines.push(others.map((text) => `- ${text}`).join('\n'));
+    lines.push('Outras sugestões registradas em sugestoes.json (trate como backlog obrigatório):');
+    lines.push(others.map((text, index) => `- [S${index + 1}] ${text}`).join('\n'));
   }
 
   if (activities.length) {
-    lines.push('Priorize concluir as atividades a fazer acima antes de propor novas melhorias ou reflexões.');
+    lines.push('Conclua todas as atividades a fazer antes de planejar melhorias novas. Não ignore nenhum item listado.');
   } else if (others.length) {
-    lines.push('Considere as sugestões listadas ao planejar melhorias e reflexões.');
+    lines.push('Implemente as sugestões acima antes de inventar novos aprimoramentos ou reflexões.');
   }
 
   return lines.join('\n').trim();
