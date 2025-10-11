@@ -160,6 +160,9 @@ node autoimprove/index.js "ajuste manual"
 | `AUTOIMPROVE_MAX_TOKENS` | Limite máximo de tokens na resposta. | `2048` |
 | `AUTOIMPROVE_INTERVAL_MS` | Intervalo mínimo entre ciclos em milissegundos. | `3600000` (1 hora) |
 | `AUTOIMPROVE_LOG_WINDOW_MS` | Duração (ms) do monitoramento de logs após cada reinício. | `30000` |
+| `AUTOIMPROVE_LOG_ERROR_PRE_CONTEXT` | Quantidade de linhas de contexto antes do erro a serem preservadas. | `6` |
+| `AUTOIMPROVE_LOG_ERROR_POST_CONTEXT` | Quantidade de linhas de contexto após o erro antes de encerrar a captura. | `24` |
+| `AUTOIMPROVE_LOG_MAX_CAPTURED_LINES` | Limite superior de linhas coletadas dos logs do PM2 por ciclo. | `80` |
 | `AUTOIMPROVE_PM2_ID` | ID/nome do processo gerenciado pelo PM2. | `0` |
 
 > **Importante:** mantenha o endpoint configurado para respeitar limites de requisição e garantir respostas válidas em JSON. O arquivo `data/existential_texts.json` pode ser alterado pelo sistema sempre que o modelo indicar novas entradas, preservando o formato atual.

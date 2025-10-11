@@ -1,5 +1,13 @@
 const { spawn } = require('child_process');
-const { pm2ProcessId, logMonitorDurationMs } = require('./config');
+const {
+  pm2ProcessId,
+  logMonitorDurationMs,
+  logErrorPreContext,
+  logErrorPostContext,
+  logMaxCapturedLines
+} = require('./config');
+
+const ERROR_PATTERN = /(error|exception|unhandled|rejection|trace|typeerror|referenceerror|syntaxerror)/i;
 
 function runCommand(command, args = []) {
   console.log('[autoimprove][pm2] Executando comando:', command, args.join(' '));
@@ -72,27 +80,109 @@ async function monitorLogs() {
   if (!flushSucceeded) {
     console.warn('[autoimprove][pm2] Não foi possível limpar os logs. Logs antigos podem aparecer na leitura a seguir.');
   }
-
   console.log('[autoimprove][pm2] Iniciando captura dos logs via pm2 logs.');
   return new Promise((resolve, reject) => {
     const child = spawn('pm2', ['logs', pm2ProcessId, '--lines', '200'], { stdio: ['ignore', 'pipe', 'pipe'] });
-    const chunks = [];
-    const errors = [];
+
+    const recentLines = [];
+    const capturedLines = [];
+    let capturing = false;
+    let postContextRemaining = 0;
+    let hasError = false;
+    let stopped = false;
+
+    const stopMonitoring = (reason) => {
+      if (stopped) {
+        return;
+      }
+      stopped = true;
+      if (reason) {
+        console.log(`[autoimprove][pm2] ${reason}`);
+      }
+      try {
+        child.kill('SIGTERM');
+      } catch (killErr) {
+        console.error('[autoimprove][pm2] Falha ao encerrar leitura de logs:', killErr);
+      }
+    };
+
+    const appendRecent = (line) => {
+      recentLines.push(line);
+      if (recentLines.length > Math.max(1, logErrorPreContext)) {
+        recentLines.shift();
+      }
+    };
+
+    const appendCaptured = (line) => {
+      if (!line) {
+        return;
+      }
+      capturedLines.push(line);
+      if (capturedLines.length >= logMaxCapturedLines) {
+        stopMonitoring('Número máximo de linhas capturadas atingido. Encerrando leitura de logs.');
+      }
+    };
+
+    const handleLine = (rawLine, source) => {
+      if (stopped) {
+        return;
+      }
+      const line = rawLine.trim();
+      if (!line) {
+        if (capturing) {
+          appendCaptured(`[${source}]`);
+          postContextRemaining = Math.max(0, postContextRemaining - 1);
+          if (postContextRemaining === 0) {
+            stopMonitoring('Janela de pós-contexto atingida. Encerrando leitura de logs.');
+          }
+        }
+        return;
+      }
+
+      const formatted = `[${source}] ${line}`;
+      console.log(`[autoimprove][pm2][logs-${source.toLowerCase()}]`, line);
+
+      if (!capturing && ERROR_PATTERN.test(line)) {
+        hasError = true;
+        capturing = true;
+        recentLines.forEach((recent) => appendCaptured(recent));
+        appendCaptured(formatted);
+        postContextRemaining = Math.max(1, logErrorPostContext);
+        return;
+      }
+
+      if (capturing) {
+        appendCaptured(formatted);
+        if (ERROR_PATTERN.test(line)) {
+          postContextRemaining = Math.max(1, logErrorPostContext);
+        } else {
+          postContextRemaining = Math.max(0, postContextRemaining - 1);
+        }
+        if (postContextRemaining === 0) {
+          stopMonitoring('Janela de pós-contexto atingida. Encerrando leitura de logs.');
+        }
+        return;
+      }
+
+      appendRecent(formatted);
+    };
 
     const timeout = setTimeout(() => {
-      console.log('[autoimprove][pm2] Tempo de monitoramento atingido. Encerrando leitura de logs.');
-      child.kill('SIGTERM');
+      stopMonitoring('Tempo de monitoramento atingido. Encerrando leitura de logs.');
     }, logMonitorDurationMs);
 
     child.stdout.on('data', (chunk) => {
-      const text = chunk.toString();
-      chunks.push(text);
-      console.log('[autoimprove][pm2][logs]', text.trim());
+      chunk
+        .toString()
+        .split('\n')
+        .forEach((line) => handleLine(line, 'STDOUT'));
     });
+
     child.stderr.on('data', (chunk) => {
-      const text = chunk.toString();
-      errors.push(text);
-      console.error('[autoimprove][pm2][logs-err]', text.trim());
+      chunk
+        .toString()
+        .split('\n')
+        .forEach((line) => handleLine(line, 'STDERR'));
     });
 
     child.on('error', (err) => {
@@ -104,17 +194,34 @@ async function monitorLogs() {
     child.on('close', () => {
       clearTimeout(timeout);
       console.log('[autoimprove][pm2] Captura de logs finalizada.');
-      resolve({ logs: chunks.join(''), errors: errors.join('') });
+      const outputLines = capturedLines.length ? capturedLines : recentLines;
+      const normalized = outputLines.join('\n');
+      const errorLines = outputLines.filter((line) => ERROR_PATTERN.test(line)).join('\n');
+      if (!hasError && !capturedLines.length) {
+        console.log('[autoimprove][pm2] Nenhum erro identificado durante a captura de logs.');
+      }
+      resolve({ logs: normalized, errors: errorLines });
     });
   });
 }
 
 function extractErrors(logOutput) {
   const combined = `${logOutput.logs}\n${logOutput.errors}`;
+  const seen = new Set();
   return combined
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => /error|exception|unhandled/i.test(line));
+    .filter((line) => line.length)
+    .filter((line) => ERROR_PATTERN.test(line))
+    .map((line) => line.replace(/^\[(STDOUT|STDERR)\]\s*/, ''))
+    .filter((line) => {
+      if (seen.has(line)) {
+        return false;
+      }
+      seen.add(line);
+      return true;
+    })
+    .slice(0, 5);
 }
 
 module.exports = {
