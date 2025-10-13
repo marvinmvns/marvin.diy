@@ -1,4 +1,11 @@
+const { Agent } = require('node:undici');
 const { endpoint, model, temperature, maxTokens } = require('./config');
+
+const ONE_HOUR_IN_MS = 60 * 60 * 1000;
+const dispatcher = new Agent({
+  headersTimeout: ONE_HOUR_IN_MS,
+  bodyTimeout: 0
+});
 
 async function requestCompletion(messages, { responseFormat = 'json_object' } = {}) {
   const payload = {
@@ -14,7 +21,8 @@ async function requestCompletion(messages, { responseFormat = 'json_object' } = 
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    dispatcher
   });
 
   if (!response.ok) {
