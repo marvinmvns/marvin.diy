@@ -4,7 +4,8 @@ const path = require('path');
 const {
   projectRoot,
   projectScanIgnore,
-  cycleIntervalMs
+  cycleIntervalMs,
+  maxPromptCharacters
 } = require('./config');
 const { buildProjectSnapshot } = require('./file-system');
 const { requestCompletion } = require('./model-client');
@@ -121,6 +122,61 @@ function formatSnapshot(snapshot) {
     .join('\n\n');
 }
 
+function limitSnapshotLength(snapshot, maxLength) {
+  if (!Number.isFinite(maxLength) || maxLength <= 0) {
+    return { snapshot, truncated: false };
+  }
+
+  const limitedSnapshot = [];
+  let totalLength = 0;
+  let truncated = false;
+
+  for (const file of snapshot) {
+    const header = `FILE: ${file.path}\n`;
+    const separatorLength = limitedSnapshot.length ? 2 : 0;
+    const entryLength = header.length + file.content.length;
+
+    if (totalLength + separatorLength + entryLength <= maxLength) {
+      limitedSnapshot.push(file);
+      totalLength += separatorLength + entryLength;
+      continue;
+    }
+
+    truncated = true;
+    const remainingForContent = maxLength - totalLength - separatorLength - header.length;
+
+    if (remainingForContent <= 0) {
+      break;
+    }
+
+    const truncationNotice = '\n[Conteúdo truncado automaticamente para caber no limite do prompt]\n';
+    const noticeLength = truncationNotice.length;
+    const allowedContentLength = remainingForContent > noticeLength ? remainingForContent - noticeLength : 0;
+
+    if (allowedContentLength <= 0) {
+      break;
+    }
+
+    const truncatedContent = `${file.content.slice(0, allowedContentLength)}${truncationNotice}`;
+    limitedSnapshot.push({ path: file.path, content: truncatedContent });
+    totalLength = maxLength;
+    break;
+  }
+
+  return { snapshot: limitedSnapshot, truncated };
+}
+
+function prepareSnapshotForModel(snapshot, { context } = {}) {
+  const { snapshot: limitedSnapshot, truncated } = limitSnapshotLength(snapshot, maxPromptCharacters);
+  if (truncated) {
+    const contextSuffix = context ? ` (${context})` : '';
+    console.warn(
+      `[autoimprove] Snapshot${contextSuffix} excedeu ${maxPromptCharacters} caracteres e foi truncado antes de enviar ao modelo.`
+    );
+  }
+  return limitedSnapshot;
+}
+
 function buildSystemPrompt() {
   return [
     'Você é um assistente de engenharia de software responsável por aprimorar continuamente este projeto.',
@@ -196,7 +252,8 @@ async function executeCycle({ reason }) {
   let plan;
   try {
     console.log('[autoimprove] Solicitando plano ao modelo com objetivo de otimizar o site e escrever textos sobre a vida...');
-    plan = await askModel({ snapshot, reason });
+    const snapshotForModel = prepareSnapshotForModel(snapshot, { context: 'ciclo principal' });
+    plan = await askModel({ snapshot: snapshotForModel, reason });
     console.log('[autoimprove] Plano recebido com resumo:', plan.summary || 'sem resumo informado');
   } catch (err) {
     console.error('[autoimprove] Erro ao consultar o modelo:', err);
@@ -238,7 +295,13 @@ async function executeCycle({ reason }) {
     let correctionPlan;
     try {
       console.log('[autoimprove] Solicitando plano de correção ao modelo...');
-      correctionPlan = await askModel({ snapshot: buildProjectSnapshot(projectRoot, projectScanIgnore), reason: 'Correção automática após erro', knownIssues: detectedIssues });
+      const correctionSnapshot = buildProjectSnapshot(projectRoot, projectScanIgnore);
+      const snapshotForCorrection = prepareSnapshotForModel(correctionSnapshot, { context: 'ciclo de correção' });
+      correctionPlan = await askModel({
+        snapshot: snapshotForCorrection,
+        reason: 'Correção automática após erro',
+        knownIssues: detectedIssues
+      });
     } catch (err) {
       console.error('[autoimprove] Erro ao solicitar plano de correção:', err);
       correctionSummary = 'Falha ao solicitar plano de correção ao modelo.';
