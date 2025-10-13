@@ -146,6 +146,8 @@ function buildTruncationNotice(snapshot) {
     });
 
   return lines.join('\n');
+}
+
 function limitSnapshotLength(snapshot, maxLength) {
   if (!Number.isFinite(maxLength) || maxLength <= 0) {
     return { snapshot, truncated: false };
