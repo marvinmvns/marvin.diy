@@ -17,6 +17,15 @@ const suggestionFeedback = $('#suggestionFeedback');
 const suggestionEmptyState = $('#suggestionEmptyState');
 const suggestionButton = $('#btnSuggestionSubmit');
 
+const reducedMotionQuery =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null;
+
+function prefersReducedMotion() {
+  return Boolean(reducedMotionQuery && reducedMotionQuery.matches);
+}
+
 const IMAGE_DISPLAY_DURATION = 10000; // 10 segundos
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.ogv']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
@@ -37,6 +46,7 @@ let imageTimer = null;
 let currentToken = 0;
 let likeMoveTimer = null;
 let likeFlashTimer = null;
+let allowLikeMovement = true;
 let isSendingLike = false;
 let existentialTexts = [];
 let existentialTextsPromise = null;
@@ -50,6 +60,7 @@ let existentialPendingAdvance = false;
 let existentialCycleTimer = null;
 let suggestionCooldownTimer = null;
 let isSendingSuggestion = false;
+let lastExistentialText = '';
 
 function shuffle(array) {
   for (let i = array.length - 1; i > 0; i -= 1) {
@@ -393,13 +404,11 @@ function getTypewriterDelay(char, profile) {
 
 function renderExistentialTypewriter(text, token) {
   if (!existentialBox || !existentialText) return;
-  existentialText.textContent = '';
   existentialBox.hidden = false;
   existentialBox.classList.add('is-visible');
-  const characters = Array.from(text);
   existentialIsWriting = true;
   clearExistentialCycleTimer();
-  const typewriterProfile = createTypewriterProfile();
+  const characters = Array.from(text);
 
   const finish = () => {
     if (token !== existentialRenderToken) return;
@@ -408,12 +417,20 @@ function renderExistentialTypewriter(text, token) {
     if (existentialPendingRequest) {
       existentialPendingRequest = false;
       displayExistentialReflection();
+      return;
     }
-    if (!existentialIsWriting) {
-      maybeTriggerPendingAdvance();
-      scheduleExistentialReflection();
-    }
+    maybeTriggerPendingAdvance();
+    scheduleExistentialReflection();
   };
+
+  if (prefersReducedMotion()) {
+    existentialText.textContent = text;
+    finish();
+    return;
+  }
+
+  existentialText.textContent = '';
+  const typewriterProfile = createTypewriterProfile();
 
   const step = (position) => {
     if (token !== existentialRenderToken) return;
@@ -439,6 +456,7 @@ function displayExistentialReflection() {
   existentialPendingRequest = false;
   cancelExistentialTypewriter();
   const text = pickExistentialText();
+  lastExistentialText = typeof text === 'string' ? text : '';
   if (!text) {
     existentialBox.classList.remove('is-visible');
     existentialBox.hidden = true;
@@ -502,7 +520,7 @@ function applyLikePosition(x, y, immediate) {
 }
 
 function moveLike(immediate = false) {
-  if (!likeButton) return;
+  if (!likeButton || !allowLikeMovement) return;
   const rect = likeButton.getBoundingClientRect();
   const margin = 40;
   const maxX = Math.max(window.innerWidth - rect.width - margin, 0);
@@ -515,10 +533,22 @@ function moveLike(immediate = false) {
 function scheduleLikeMovement(delay = 4500) {
   if (!likeButton) return;
   clearLikeMovementTimer();
+  if (!allowLikeMovement) return;
   likeMoveTimer = setTimeout(() => {
     moveLike();
     scheduleLikeMovement(4000 + Math.random() * 4000);
   }, delay);
+}
+
+function syncLikeMotion(immediate = true, delay = 1200) {
+  if (!likeButton) return;
+  if (!allowLikeMovement) {
+    clearLikeMovementTimer();
+    applyLikePosition(16, 16, immediate);
+    return;
+  }
+  moveLike(immediate);
+  scheduleLikeMovement(delay);
 }
 
 async function fetchLikeTotal() {
@@ -597,13 +627,12 @@ async function registerLike() {
 function startLikeFeature() {
   if (!likeButton) return;
   setLikeCount(0);
-  moveLike(true);
-  scheduleLikeMovement(1200);
+  allowLikeMovement = !prefersReducedMotion();
+  syncLikeMotion(true, 1200);
   fetchLikeTotal();
   likeButton.addEventListener('click', registerLike);
   window.addEventListener('resize', () => {
-    moveLike(true);
-    scheduleLikeMovement(2000);
+    syncLikeMotion(true, 2000);
   });
 }
 
@@ -873,3 +902,32 @@ scheduleExistentialReflection(3000, 7000);
 updateSoundLabel();
 startPlayback();
 startLikeFeature();
+
+function handleReducedMotionPreferenceChange() {
+  const reduced = prefersReducedMotion();
+  allowLikeMovement = !reduced;
+  syncLikeMotion(true, 1200);
+
+  if (reduced && existentialIsWriting) {
+    cancelExistentialTypewriter();
+    if (existentialText) {
+      existentialText.textContent = lastExistentialText;
+    }
+    if (existentialPendingRequest) {
+      existentialPendingRequest = false;
+      displayExistentialReflection();
+      return;
+    }
+    maybeTriggerPendingAdvance();
+    scheduleExistentialReflection();
+  }
+}
+
+if (reducedMotionQuery) {
+  const listener = () => handleReducedMotionPreferenceChange();
+  if (typeof reducedMotionQuery.addEventListener === 'function') {
+    reducedMotionQuery.addEventListener('change', listener);
+  } else if (typeof reducedMotionQuery.addListener === 'function') {
+    reducedMotionQuery.addListener(listener);
+  }
+}
