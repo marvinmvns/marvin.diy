@@ -7,6 +7,19 @@ const {
   existentialTextsFile
 } = require('./config');
 
+function previewText(text, { limit = 2000 } = {}) {
+  const serialized = typeof text === 'string' ? text : String(text ?? '');
+  if (serialized.length <= limit) {
+    return { value: serialized, truncated: false, length: serialized.length };
+  }
+
+  return {
+    value: `${serialized.slice(0, limit)}…`,
+    truncated: true,
+    length: serialized.length
+  };
+}
+
 function ensureFilePath(targetPath) {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
 }
@@ -18,6 +31,41 @@ function safeAppend(targetPath, data) {
   } catch (err) {
     console.error('[autoimprove][logging] Falha ao registrar informações em', targetPath, err);
   }
+}
+
+function logLLMRequest(payload) {
+  const { model, temperature, max_tokens: maxTokens, response_format: responseFormat, messages } = payload;
+
+  const normalizedMessages = Array.isArray(messages)
+    ? messages.map((message, index) => {
+        const content = message && Object.prototype.hasOwnProperty.call(message, 'content') ? message.content : '';
+        const serialized = typeof content === 'string' ? content : JSON.stringify(content);
+        const { value, truncated, length } = previewText(serialized);
+
+        return {
+          index,
+          role: message.role,
+          length,
+          truncated,
+          preview: value
+        };
+      })
+    : [];
+
+  console.log(
+    '[autoimprove][model-client] Enviando requisição ao LLM com payload:',
+    JSON.stringify(
+      {
+        model,
+        temperature,
+        maxTokens,
+        responseFormat,
+        messages: normalizedMessages
+      },
+      null,
+      2
+    )
+  );
 }
 
 function appendHistory(entry) {
@@ -113,5 +161,6 @@ module.exports = {
   appendReport,
   readState,
   writeState,
-  appendExistentialReflection
+  appendExistentialReflection,
+  logLLMRequest
 };
