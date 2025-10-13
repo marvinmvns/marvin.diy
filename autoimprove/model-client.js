@@ -1,4 +1,21 @@
-const { Agent } = require('node:undici');
+let Agent;
+let fetchFn = global.fetch;
+
+try {
+  ({ Agent } = require('node:undici'));
+  if (!fetchFn) {
+    ({ fetch: fetchFn } = require('node:undici'));
+  }
+} catch (error) {
+  ({ Agent, fetch: fetchFn } = require('undici'));
+}
+
+if (typeof fetchFn !== 'function') {
+  throw new Error('Unable to locate a fetch implementation. Ensure undici is installed.');
+}
+
+const fetch = (...args) => fetchFn(...args);
+
 const { endpoint, model, temperature, maxTokens } = require('./config');
 
 const ONE_HOUR_IN_MS = 60 * 60 * 1000;
