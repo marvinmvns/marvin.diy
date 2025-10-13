@@ -17,6 +17,7 @@ if (typeof fetchFn !== 'function') {
 const fetch = (...args) => fetchFn(...args);
 
 const { endpoint, model, temperature, maxTokens } = require('./config');
+const { logLLMRequest } = require('./logging');
 
 const ONE_HOUR_IN_MS = 60 * 60 * 1000;
 const dispatcher = new Agent({
@@ -32,6 +33,8 @@ async function requestCompletion(messages, { responseFormat = 'json_object' } = 
     messages,
     response_format: { type: responseFormat }
   };
+
+  logLLMRequest(payload);
 
   const response = await fetch(endpoint, {
     method: 'POST',
