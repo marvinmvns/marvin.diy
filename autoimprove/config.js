@@ -9,6 +9,8 @@ module.exports = {
   temperature: Number.parseFloat(process.env.AUTOIMPROVE_TEMPERATURE || '0.2'),
   maxTokens: Number.parseInt(process.env.AUTOIMPROVE_MAX_TOKENS || '20480', 10),
   maxPromptCharacters: Number.parseInt(process.env.AUTOIMPROVE_MAX_PROMPT_CHARS || '120000', 10),
+  snapshotFileCharLimit: Number.parseInt(process.env.AUTOIMPROVE_SNAPSHOT_FILE_CHAR_LIMIT || '8000', 10),
+  snapshotMinTruncatedLength: Number.parseInt(process.env.AUTOIMPROVE_SNAPSHOT_MIN_LENGTH || '1200', 10),
   cycleIntervalMs: Number.parseInt(process.env.AUTOIMPROVE_INTERVAL_MS || String(60 * 60 * 1000), 10),
   logMonitorDurationMs: Number.parseInt(process.env.AUTOIMPROVE_LOG_WINDOW_MS || String(30 * 1000), 10),
   logErrorPreContext: Number.parseInt(process.env.AUTOIMPROVE_LOG_ERROR_PRE_CONTEXT || '6', 10),

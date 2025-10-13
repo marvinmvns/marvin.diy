@@ -118,10 +118,34 @@ let isRunningCycle = false;
 
 function formatSnapshot(snapshot) {
   return snapshot
-    .map((file) => `FILE: ${file.path}\n${file.content}`)
+    .map((file) => {
+      const header = file.truncated
+        ? `FILE: ${file.path} (truncado para ${file.content.length} de ${file.originalLength} caracteres)`
+        : `FILE: ${file.path}`;
+      return `${header}\n${file.content}`;
+    })
     .join('\n\n');
 }
 
+function buildTruncationNotice(snapshot) {
+  const truncated = snapshot.filter((file) => file.truncated);
+  if (!truncated.length) {
+    return '';
+  }
+
+  const lines = [
+    'Alguns arquivos foram truncados para caber no limite de contexto. Se precisar do conteúdo completo, solicite um novo ciclo com foco específico.'
+  ];
+
+  truncated
+    .sort((a, b) => b.originalLength - a.originalLength)
+    .forEach((file) => {
+      lines.push(
+        `- ${file.path}: ${file.content.length}/${file.originalLength} caracteres enviados`
+      );
+    });
+
+  return lines.join('\n');
 function limitSnapshotLength(snapshot, maxLength) {
   if (!Number.isFinite(maxLength) || maxLength <= 0) {
     return { snapshot, truncated: false };
@@ -200,15 +224,21 @@ function buildSystemPrompt() {
 function buildPlanPrompt({ snapshot, reason, knownIssues = [] }) {
   const sections = [
     `Motivo do ciclo: ${reason}.`,
-    'Objetivo permanente: otimizar o site e escrever textos sobre a vida.',
-    'Contexto do projeto (arquivos de texto relevantes):',
-    formatSnapshot(snapshot)
+    'Objetivo permanente: otimizar o site e escrever textos sobre a vida.'
   ];
 
   const suggestionsSection = buildSuggestionsPromptSection();
   if (suggestionsSection) {
-    sections.splice(2, 0, suggestionsSection);
+    sections.push(suggestionsSection);
   }
+
+  const truncationNotice = buildTruncationNotice(snapshot);
+  if (truncationNotice) {
+    sections.push(truncationNotice);
+  }
+
+  sections.push('Contexto do projeto (arquivos de texto relevantes):');
+  sections.push(formatSnapshot(snapshot));
 
   if (knownIssues.length) {
     sections.push('Problemas detectados nos logs recentes:', knownIssues.map((issue) => `- ${issue}`).join('\n'));
